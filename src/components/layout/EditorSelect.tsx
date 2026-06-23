@@ -1,0 +1,21 @@
+import { EDITORS, useEditor } from "../../state/EditorContext";
+import { SelectWithIcon, IconCode } from "../ui/SelectWithIcon";
+
+/** Topbar selector choosing which editor "open file" links target. */
+export function EditorSelect() {
+  const { editor, setEditorId } = useEditor();
+  return (
+    <SelectWithIcon icon={<IconCode />}>
+      <select
+        value={editor.id}
+        onChange={(e) => setEditorId(e.target.value)}
+        title="Editor for 'open' links"
+
+      >
+        {EDITORS.map((e) => (
+          <option key={e.id} value={e.id}>{e.label}</option>
+        ))}
+      </select>
+    </SelectWithIcon>
+  );
+}
