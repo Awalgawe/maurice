@@ -10,7 +10,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import type { MemoryEntry, SessionDetail as Detail, ThreadMessage } from "../types";
+import type { CacheRewriteRef, MemoryEntry, SessionDetail as Detail, ThreadMessage } from "../types";
 import { getDetail, getSessionMemories, getSubagent } from "../api";
 import { modelLabel, skillLabel, totalTokens } from "../format";
 import { useFmt } from "../hooks/useFmt";
@@ -119,6 +119,25 @@ export default function SessionDetail() {
     if (p !== 1) params.page = String(p);
     if (branch) params.branch = branch;
     setSearchParams(params);
+  }
+
+  // Jump to a flagged message: same-page → direct scroll + flash; other page →
+  // navigate with the anchor and let the deep-link effect scroll after fetch.
+  function goToRewrite(rw: CacheRewriteRef) {
+    if (!rw.uuid) return;
+    const el = document.getElementById(`msg-${rw.uuid}`);
+    if (el) {
+      el.scrollIntoView({ behavior: "instant", block: "center" });
+      el.classList.add("flash");
+      setTimeout(() => el.classList.remove("flash"), 2100);
+      return;
+    }
+    const params = new URLSearchParams();
+    const page = Math.floor(rw.index / PAGE) + 1;
+    if (page > 1) params.set("page", String(page));
+    if (branch) params.set("branch", branch);
+    const qs = params.toString();
+    navigate({ search: qs ? `?${qs}` : "", hash: `#msg-${rw.uuid}` });
   }
 
   if (err) return <div className="center">{t("detail_error_prefix")}{err}</div>;
@@ -255,6 +274,34 @@ export default function SessionDetail() {
               {t("detail_ctx_hint")}
             </div>
           </Panel>
+
+          {data.cacheRewrites.length > 0 && (
+            <Panel title={`⚠ ${t("detail_panel_rewrites")} (${data.cacheRewrites.length})`}>
+              {data.cacheRewrites.map((rw) => (
+                <div key={rw.uuid || rw.index} style={{ marginBottom: 8 }}>
+                  <button
+                    style={{ width: "100%", textAlign: "left" }}
+                    onClick={() => goToRewrite(rw)}
+                    title={t(rw.cause === "idle" ? "message_cache_rewrite_idle" : "message_cache_rewrite_edit")}
+                  >
+                    <strong>≈{fmtCost(rw.wastedUSD)}</strong>
+                    <Chip variant="warn" style={{ marginLeft: 6 }}>
+                      {t(rw.cause === "idle" ? "detail_rewrite_idle" : "detail_rewrite_edit")}
+                    </Chip>
+                    <div className="muted" style={{ fontSize: 12 }}>
+                      {fmtDate(rw.timestamp)} · {fmtTokens(rw.rewrittenTokens)} tokens
+                    </div>
+                  </button>
+                </div>
+              ))}
+              <div className="kv">
+                <span className="k">{t("detail_rewrites_total")}</span>
+                <span className="v cost">
+                  {fmtCost(data.cacheRewrites.reduce((a, rw) => a + rw.wastedUSD, 0))}
+                </span>
+              </div>
+            </Panel>
+          )}
 
           {m.mcpTools.length > 0 && (
             <Panel title={`${t("detail_panel_mcp")} (${m.mcpTools.length})`}>

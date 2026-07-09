@@ -19,7 +19,9 @@ import {
   tokensFromUsage,
 } from "./jsonl.ts";
 import { createForkCollector } from "./forks.ts";
+import { createCacheRewriteDetector } from "./cacheRewrite.ts";
 import type {
+  CacheRewrite,
   ContentBlock,
   ContextPoint,
   ForkInfo,
@@ -125,6 +127,9 @@ export async function buildMetaAndDocs(file: SessionFile): Promise<{ meta: Sessi
   const textDocs: { uuid: string | null; text: string }[] = [];
   const renderSeq: (string | null)[] = [];
   const forkCollector = createForkCollector();
+  const rewriteDetector = createCacheRewriteDetector();
+  let cacheRewriteCount = 0;
+  let cacheRewriteWastedUSD = 0;
 
   for await (const obj of iterateJsonl(file.filePath)) {
     forkCollector.add(obj);
@@ -188,6 +193,15 @@ export async function buildMetaAndDocs(file: SessionFile): Promise<{ meta: Sessi
         modelCost[mk] = (modelCost[mk] || 0) + turnCost;
         const ctx = contextTokens(msg.usage);
         if (ctx > peakContextTokens) peakContextTokens = ctx;
+        // Cache-rewrite anomalies: main-thread requests only (sidechains bill
+        // on their own cache stream and would corrupt the previous-context chain).
+        if (obj.isSidechain !== true) {
+          const rw = rewriteDetector.check(msg.usage, msg.model, ts);
+          if (rw) {
+            cacheRewriteCount++;
+            cacheRewriteWastedUSD += rw.wastedUSD;
+          }
+        }
       }
     }
 
@@ -307,6 +321,8 @@ export async function buildMetaAndDocs(file: SessionFile): Promise<{ meta: Sessi
       errorCount,
       hasErrors: errorCount > 0,
       errors,
+      cacheRewriteCount,
+      cacheRewriteWastedUSD,
       mcpTools: [...mcpTools],
       subagentCount: countSubagents(file.projectId, file.id),
       firstUserPrompt,
@@ -431,7 +447,11 @@ function recordToolUses(obj: any, toolNames: Map<string, string>): void {
 }
 
 /** Turn a raw line into a ThreadMessage (heavy: builds content blocks). */
-function toThreadMessage(obj: any, toolNames: Map<string, string>): ThreadMessage {
+function toThreadMessage(
+  obj: any,
+  toolNames: Map<string, string>,
+  cacheRewrite: CacheRewrite | null = null,
+): ThreadMessage {
   const msg = obj.message;
   const blocks = extractBlocks(msg);
   const isError = hasRealError(msg?.content);
@@ -446,6 +466,7 @@ function toThreadMessage(obj: any, toolNames: Map<string, string>): ThreadMessag
     isSidechain: obj.isSidechain === true,
     isError,
     tokens: obj.type === "assistant" && msg?.usage ? tokensFromUsage(msg.usage) : null,
+    cacheRewrite,
     blocks,
     fork: null, // annotated after the fork analysis (subagent threads never fork)
     forksHere: [],
@@ -506,11 +527,15 @@ async function getParsedSession(meta: SessionMeta): Promise<ParsedSession> {
   const messages: ThreadMessage[] = [];
   const toolNames = new Map<string, string>();
   const forkCollector = createForkCollector();
+  const rewriteDetector = createCacheRewriteDetector();
   let lines = 0;
 
   for await (const obj of iterateJsonl(filePath)) {
     lines++;
     forkCollector.add(obj);
+    // Parallel tool-call siblings share the requestId: the usage dedup below
+    // also makes the rewrite flag land on the request's first message only.
+    let rewrite: CacheRewrite | null = null;
     if (obj.type === "assistant" && obj.message) {
       recordToolUses(obj, toolNames);
       const usageKey = obj.requestId || obj.message.id || obj.uuid;
@@ -524,10 +549,13 @@ async function getParsedSession(meta: SessionMeta): Promise<ParsedSession> {
             pct: Math.min(100, (ctx / CONTEXT_WINDOW) * 100),
           });
         }
+        if (obj.isSidechain !== true) {
+          rewrite = rewriteDetector.check(obj.message.usage, obj.message.model, obj.timestamp);
+        }
       }
     }
     if (!RENDERABLE.has(obj.type)) continue;
-    messages.push(toThreadMessage(obj, toolNames));
+    messages.push(toThreadMessage(obj, toolNames, rewrite));
   }
 
   const analysis = forkCollector.finish();
@@ -579,6 +607,9 @@ export async function readDetail(
     if (!members) return null;
     view = parsed.messages.filter((m) => m.uuid !== null && members.has(m.uuid));
   }
+  const cacheRewrites = view.flatMap((m, i) =>
+    m.cacheRewrite ? [{ ...m.cacheRewrite, uuid: m.uuid, timestamp: m.timestamp, index: i }] : [],
+  );
   return {
     meta,
     messages: view.slice(offset, offset + limit),
@@ -588,6 +619,7 @@ export async function readDetail(
     context: parsed.context,
     subagents: parsed.subagents,
     forks: parsed.forks,
+    cacheRewrites,
     branch: branch ?? null,
   };
 }

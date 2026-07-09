@@ -9,7 +9,7 @@ import type { SessionMeta } from "../src/types.ts";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CACHE_DIR = path.join(__dirname, "..", ".cache");
 const CACHE_FILE = path.join(CACHE_DIR, "index.json");
-const CACHE_VERSION = 9; // 9: local costByDay + activeDays + activityHeat
+const CACHE_VERSION = 10; // 10: cacheRewriteCount + cacheRewriteWastedUSD
 
 interface CacheEntry {
   size: number;

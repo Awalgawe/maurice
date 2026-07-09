@@ -7,6 +7,17 @@ export interface TokenTotals {
   cacheCreate: number;
 }
 
+/** A detected prompt-cache rewrite on an assistant request: the previous
+ *  context was not served back as cache reads (expired or invalidated) and was
+ *  re-written at the cache-write rate instead — an avoidable surcost when the
+ *  cause is an idle gap beyond the provider's cache TTL. */
+export interface CacheRewrite {
+  cause: "idle" | "context-edit"; // idle = gap > cache TTL, expiry is certain
+  rewrittenTokens: number; // previous-context tokens re-written instead of read
+  wastedUSD: number; // estimated surcost vs a warm cache (write − read rate)
+  gapMs: number | null; // time since the previous billed request
+}
+
 /** One recorded tool failure in a session: an `is_error` tool_result that is
  *  not a user interruption. Bounded to the last few per session in the index. */
 export interface SessionError {
@@ -51,6 +62,11 @@ export interface SessionMeta {
   errorCount: number;
   hasErrors: boolean;
   errors: SessionError[]; // last few recorded failures, newest last
+  // Cache-rewrite anomalies (see CacheRewrite): how many billed requests
+  // re-wrote their context instead of reading it, and the estimated total
+  // avoidable surcost. Lets the Sessions list surface wasteful sessions.
+  cacheRewriteCount: number;
+  cacheRewriteWastedUSD: number;
   mcpTools: string[];
   subagentCount: number;
   firstUserPrompt: string | null; // short preview for the list
@@ -82,12 +98,23 @@ export interface ThreadMessage {
   isSidechain: boolean;
   isError: boolean;
   tokens: TokenTotals | null;
+  // Set on the first message of a billed request whose usage shows the prompt
+  // cache was re-written instead of read (null = normal turn).
+  cacheRewrite: CacheRewrite | null;
   blocks: ContentBlock[];
   // Rewind-abandoned branch owning this turn (null = live thread). Parallel
   // tool-call siblings are NOT forks — they share the turn's requestId.
   fork: string | null;
   // Refs of the abandoned branches that diverge right after this turn.
   forksHere: string[];
+}
+
+/** One cache-rewrite occurrence located within a served view, so the aside
+ *  can deep-link to the flagged message (page + anchor). */
+export interface CacheRewriteRef extends CacheRewrite {
+  uuid: string | null;
+  timestamp: string | null;
+  index: number; // position within the served view → page + anchor deep-link
 }
 
 /** One rewind-abandoned branch of a session's parentUuid tree. */
@@ -133,6 +160,9 @@ export interface SessionDetail {
   context: ContextPoint[];
   subagents: SubagentRef[];
   forks: ForkInfo[];
+  // Every cache rewrite of the served view, in thread order — powers the
+  // aside's quick-navigation list (not limited to the current page).
+  cacheRewrites: CacheRewriteRef[];
   branch: string | null; // served view: null = live thread, "f1"… = a fork
 }
 

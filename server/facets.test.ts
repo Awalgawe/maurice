@@ -27,6 +27,8 @@ function session(partial: Partial<SessionMeta>): SessionMeta {
     errorCount: 0,
     hasErrors: false,
     errors: [],
+    cacheRewriteCount: 0,
+    cacheRewriteWastedUSD: 0,
     mcpTools: [],
     subagentCount: 0,
     firstUserPrompt: null,

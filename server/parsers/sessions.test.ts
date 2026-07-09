@@ -141,6 +141,52 @@ describe("buildMeta per-day cost + activity attribution", () => {
   });
 });
 
+describe("buildMeta cache-rewrite aggregation", () => {
+  let rdir: string;
+  let rfile: SessionFile;
+
+  const u = (input: number, cacheRead: number, cacheCreate: number) => ({
+    input_tokens: input,
+    cache_read_input_tokens: cacheRead,
+    cache_creation_input_tokens: cacheCreate,
+  });
+
+  const rlines = [
+    // First billed request: establishes the context, never flagged.
+    { type: "assistant", requestId: "r1", timestamp: "2026-01-01T10:00:00Z",
+      message: { model: "claude-sonnet-4-6", usage: u(1000, 0, 99_000) } },
+    // 15 min idle → full rewrite: 100k re-written instead of read.
+    { type: "assistant", requestId: "r2", timestamp: "2026-01-01T10:15:00Z",
+      message: { model: "claude-sonnet-4-6", usage: u(500, 0, 100_000) } },
+    // Parallel sibling (same requestId): must not double-count the rewrite.
+    { type: "assistant", requestId: "r2", timestamp: "2026-01-01T10:15:01Z",
+      message: { model: "claude-sonnet-4-6", usage: u(500, 0, 100_000) } },
+    // Sidechain with a rewrite-looking usage: separate cache stream, excluded.
+    { type: "assistant", requestId: "r3", isSidechain: true, timestamp: "2026-01-01T10:15:30Z",
+      message: { model: "claude-sonnet-4-6", usage: u(500, 0, 90_000) } },
+    // Normal follow-up turn: previous context read back, not flagged.
+    { type: "assistant", requestId: "r4", timestamp: "2026-01-01T10:16:00Z",
+      message: { model: "claude-sonnet-4-6", usage: u(200, 100_500, 1_000) } },
+  ];
+
+  beforeAll(() => {
+    rdir = fs.mkdtempSync(path.join(os.tmpdir(), "sess-rewrite-"));
+    const fp = path.join(rdir, "r1.jsonl");
+    fs.writeFileSync(fp, rlines.map((l) => JSON.stringify(l)).join("\n") + "\n");
+    const stat = fs.statSync(fp);
+    rfile = { id: "r1", projectId: "-tmp-proj", filePath: fp, size: stat.size, mtimeMs: stat.mtimeMs };
+  });
+
+  afterAll(() => fs.rmSync(rdir, { recursive: true, force: true }));
+
+  it("counts the idle rewrite once and prices its avoidable surcost", async () => {
+    const m = await buildMeta(rfile);
+    expect(m.cacheRewriteCount).toBe(1);
+    // 100k tokens at the Sonnet write−read delta: (3.75 − 0.3) $/MTok.
+    expect(m.cacheRewriteWastedUSD).toBeCloseTo((100_000 * (3.75 - 0.3)) / 1_000_000, 10);
+  });
+});
+
 describe("classifyMessage", () => {
   const text = (s: string): ContentBlock => ({ kind: "text", text: s });
   const toolResult = (toolUseId: string | null): ContentBlock => ({

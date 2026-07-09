@@ -14,6 +14,7 @@ function msg(blocks: ThreadMessage["blocks"]): ThreadMessage {
     isSidechain: false,
     isError: false,
     tokens: null,
+    cacheRewrite: null,
     blocks,
     fork: null,
     forksHere: [],
