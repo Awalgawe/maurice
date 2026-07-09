@@ -56,6 +56,16 @@ export function estimateCostByComponent(
   };
 }
 
+/** Estimated avoidable USD surcost of re-writing `tokens` cache tokens that a
+ *  warm cache would have served as reads (cache-write − cache-read rate). */
+export function estimateCacheRewriteWaste(
+  model: string | null | undefined,
+  tokens: number,
+): number {
+  const p = priceFor(model);
+  return (tokens * (p.cacheCreate - p.cacheRead)) / 1_000_000;
+}
+
 /** Estimate total USD cost for a token bundle attributed to a model. */
 export function estimateCost(model: string | null | undefined, t: TokenTotals): number {
   const c = estimateCostByComponent(model, t);

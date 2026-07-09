@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import type { ThreadMessage } from "../../types";
-import { fmtTokens, skillLabel } from "../../format";
+import { fmtCost, fmtTokens, skillLabel } from "../../format";
 import { useT } from "../../hooks/useT";
 import { messageToText } from "../../lib/messageText";
 import { Chip } from "../ui/Chip";
@@ -65,6 +65,19 @@ export const Message = React.memo(function Message({ m, compact = false }: { m: 
           <Chip>
             ↑{fmtTokens(m.tokens.input + m.tokens.cacheRead + m.tokens.cacheCreate)} ↓
             {fmtTokens(m.tokens.output)}
+          </Chip>
+        )}
+        {m.cacheRewrite && (
+          <Chip
+            variant="warn"
+            title={
+              `${fmtTokens(m.cacheRewrite.rewrittenTokens)} ${t("message_cache_rewrite_tokens")} · ` +
+              (m.cacheRewrite.cause === "idle"
+                ? `${t("message_cache_rewrite_idle")}${m.cacheRewrite.gapMs !== null ? ` (${Math.round(m.cacheRewrite.gapMs / 60000)} min)` : ""}`
+                : t("message_cache_rewrite_edit"))
+            }
+          >
+            ⚠ {t("message_cache_rewrite_chip")} ≈{fmtCost(m.cacheRewrite.wastedUSD)}
           </Chip>
         )}
         {m.isError && <Chip variant="err">{t("message_error_chip")}</Chip>}

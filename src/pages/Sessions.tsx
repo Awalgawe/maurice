@@ -11,7 +11,13 @@ import { ContextBar } from "../components/ui/ContextBar";
 import { Picker } from "../components/ui/Picker";
 import { SortHeader } from "../components/ui/SortHeader";
 
-type SortKey = "end" | "messageCount" | "tokens" | "estCostUSD" | "peakContextPct";
+type SortKey =
+  | "end"
+  | "messageCount"
+  | "tokens"
+  | "estCostUSD"
+  | "cacheRewriteWastedUSD"
+  | "peakContextPct";
 
 const pad = (n: number) => String(n).padStart(2, "0");
 
@@ -110,6 +116,8 @@ export default function Sessions() {
           return totalTokens(s.tokens);
         case "end":
           return s.end || "";
+        case "cacheRewriteWastedUSD":
+          return s.cacheRewriteWastedUSD || 0;
         default:
           return s[sortKey];
       }
@@ -164,6 +172,7 @@ export default function Sessions() {
           <col style={{ width: 56 }} />
           <col style={{ width: 74 }} />
           <col style={{ width: 74 }} />
+          <col style={{ width: 74 }} />
           <col style={{ width: 86 }} />
           <col style={{ width: 52 }} />
           <col style={{ width: 52 }} />
@@ -179,6 +188,7 @@ export default function Sessions() {
             <SortHeader k="messageCount" label={t("sessions_col_msgs")} className="num" {...sortProps} />
             <SortHeader k="tokens" label={t("sessions_col_tokens")} className="num" {...sortProps} />
             <SortHeader k="estCostUSD" label={t("sessions_col_cost")} className="num" {...sortProps} />
+            <SortHeader k="cacheRewriteWastedUSD" label={t("sessions_col_waste")} className="num" {...sortProps} />
             <SortHeader k="peakContextPct" label={t("sessions_col_ctx")} className="num" {...sortProps} />
             <th className="num">{t("sessions_col_err")}</th>
             <th className="num">{t("sessions_col_sub")}</th>
@@ -192,7 +202,7 @@ export default function Sessions() {
             <Fragment key={s.projectId + "/" + s.id}>
             {newDay && (
               <tr className="day-row">
-                <td colSpan={12}>{dayLabel(key)}</td>
+                <td colSpan={13}>{dayLabel(key)}</td>
               </tr>
             )}
             <tr>
@@ -236,6 +246,18 @@ export default function Sessions() {
               <td className="num">{s.messageCount}</td>
               <td className="num">{fmtTokens(totalTokens(s.tokens))}</td>
               <td className="num cost">{fmtCost(s.estCostUSD)}</td>
+              <td className="num">
+                {(s.cacheRewriteWastedUSD || 0) > 0 ? (
+                  <Chip
+                    variant="warn"
+                    title={`${s.cacheRewriteCount} ${t("sessions_waste_title")}`}
+                  >
+                    ⚠ {fmtCost(s.cacheRewriteWastedUSD)}
+                  </Chip>
+                ) : (
+                  ""
+                )}
+              </td>
               <td className="num">
                 <ContextBar pct={s.peakContextPct} />
               </td>

@@ -102,3 +102,59 @@ describe("readDetail fork views", () => {
     expect(await readDetail(meta, 0, 100, "f9")).toBeNull();
   });
 });
+
+describe("readDetail cache-rewrite flags", () => {
+  const RW_SESSION = "s-rewrite";
+
+  const billed = (
+    uuid: string,
+    parent: string | null,
+    requestId: string,
+    ts: string,
+    usage: { input_tokens: number; cache_read_input_tokens: number; cache_creation_input_tokens: number },
+  ) => ({
+    uuid,
+    parentUuid: parent,
+    type: "assistant",
+    timestamp: ts,
+    requestId,
+    message: {
+      id: `msg_${requestId}`,
+      role: "assistant",
+      model: "claude-sonnet-4-6",
+      content: [{ type: "text", text: `answer ${uuid}` }],
+      usage,
+    },
+  });
+
+  const rwLines = [
+    human("u1", null, "start", "2026-01-01T10:00:00Z"),
+    billed("a1", "u1", "r1", "2026-01-01T10:00:05Z",
+      { input_tokens: 1000, cache_read_input_tokens: 0, cache_creation_input_tokens: 99_000 }),
+    human("u2", "a1", "back after lunch", "2026-01-01T11:00:00Z"),
+    // Idle rewrite, split into two parallel siblings sharing r2.
+    billed("a2", "u2", "r2", "2026-01-01T11:00:05Z",
+      { input_tokens: 500, cache_read_input_tokens: 0, cache_creation_input_tokens: 100_000 }),
+    billed("a2b", "a2", "r2", "2026-01-01T11:00:06Z",
+      { input_tokens: 500, cache_read_input_tokens: 0, cache_creation_input_tokens: 100_000 }),
+  ];
+
+  it("flags the rewrite on the request's first message only", async () => {
+    const fp2 = sessionFilePath(PROJECT, RW_SESSION);
+    fs.writeFileSync(fp2, rwLines.map((l) => JSON.stringify(l)).join("\n") + "\n");
+    const stat2 = fs.statSync(fp2);
+    const meta2 = await buildMeta({ id: RW_SESSION, projectId: PROJECT, filePath: fp2, size: stat2.size, mtimeMs: stat2.mtimeMs });
+    const d = await readDetail(meta2, 0, 100);
+    const byUuid = new Map(d!.messages.map((m) => [m.uuid, m]));
+    expect(byUuid.get("a1")!.cacheRewrite).toBeNull(); // first billed request
+    const rw = byUuid.get("a2")!.cacheRewrite;
+    expect(rw).not.toBeNull();
+    expect(rw!.cause).toBe("idle");
+    expect(rw!.rewrittenTokens).toBe(100_000);
+    expect(byUuid.get("a2b")!.cacheRewrite).toBeNull(); // parallel sibling, same requestId
+    expect(meta2.cacheRewriteCount).toBe(1);
+    // Quick-nav list: one entry, located at the flagged message's view index.
+    expect(d!.cacheRewrites).toHaveLength(1);
+    expect(d!.cacheRewrites[0]).toMatchObject({ uuid: "a2", index: 3, cause: "idle" });
+  });
+});
