@@ -6,13 +6,18 @@ import {
   boundedEditDistance,
   corrections,
   initSearchIndex,
-  upsertDoc,
+  upsertDocs,
   searchDocs,
   pruneDocs,
   beginBatch,
   endBatch,
   _resetForTesting,
 } from "./searchIndex.ts";
+
+/** Single-message session shorthand (most cases only need one doc). */
+function upsertDoc(sessionId: string, projectId: string, body: string): void {
+  upsertDocs(sessionId, projectId, [{ uuid: `u-${sessionId}`, body, fork: null, idx: 0 }]);
+}
 
 // ── Pure helpers ──────────────────────────────────────────────────────────────
 
@@ -248,5 +253,28 @@ describe("searchDocs", () => {
     const hits = searchDocs("kubernetes", 10);
     expect(hits.map((h) => h.sessionId)).toContain("sess1");
     expect(hits.map((h) => h.sessionId)).not.toContain("sess2");
+  });
+
+  it("stores per-message docs and returns uuid/fork/idx on hits", () => {
+    upsertDocs("sess1", "proj1", [
+      { uuid: "m1", body: "the live thread talks about kubernetes", fork: null, idx: 3 },
+      { uuid: "m2", body: "an abandoned attempt mentioning terraform", fork: "f1", idx: 5 },
+    ]);
+    const live = searchDocs("kubernetes", 10);
+    expect(live).toHaveLength(1);
+    expect(live[0]).toMatchObject({ sessionId: "sess1", uuid: "m1", fork: null, idx: 3 });
+    const forked = searchDocs("terraform", 10);
+    expect(forked).toHaveLength(1);
+    expect(forked[0]).toMatchObject({ sessionId: "sess1", uuid: "m2", fork: "f1", idx: 5 });
+  });
+
+  it("returns one row per matching message of the same session", () => {
+    upsertDocs("sess1", "proj1", [
+      { uuid: "m1", body: "kubernetes on the live thread", fork: null, idx: 0 },
+      { uuid: "m2", body: "kubernetes again on a fork", fork: "f1", idx: 2 },
+    ]);
+    const hits = searchDocs("kubernetes", 10);
+    expect(hits).toHaveLength(2);
+    expect(new Set(hits.map((h) => h.uuid))).toEqual(new Set(["m1", "m2"]));
   });
 });

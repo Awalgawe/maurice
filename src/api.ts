@@ -25,8 +25,10 @@ async function get<T>(url: string): Promise<T> {
 export const getSessions = () => get<SessionMeta[]>("/api/sessions");
 export const getActive = () => get<ActiveSession | { active: false }>("/api/active");
 export const getFilters = () => get<Facets>("/api/filters");
-export const getDetail = (id: string, offset = 0, limit = 200) =>
-  get<SessionDetail>(`/api/sessions/${id}?offset=${offset}&limit=${limit}`);
+export const getDetail = (id: string, offset = 0, limit = 200, branch: string | null = null) =>
+  get<SessionDetail>(
+    `/api/sessions/${id}?offset=${offset}&limit=${limit}${branch ? `&branch=${encodeURIComponent(branch)}` : ""}`,
+  );
 export const getSubagent = (id: string, ref: string) =>
   get<{ messages: ThreadMessage[] }>(`/api/sessions/${id}/subagents/${ref}`);
 export const search = (q: string) =>

@@ -18,9 +18,11 @@ import {
   stringifyToolResult,
   tokensFromUsage,
 } from "./jsonl.ts";
+import { createForkCollector } from "./forks.ts";
 import type {
   ContentBlock,
   ContextPoint,
+  ForkInfo,
   MessageKind,
   SessionDetail,
   SessionError,
@@ -78,7 +80,15 @@ function countSubagents(projectId: string, id: string): number {
 }
 
 /** Full streaming pass over one session file to build its index row + clean search text. */
-export async function buildMetaAndText(file: SessionFile): Promise<{ meta: SessionMeta; searchText: string }> {
+/** One per-message search-index document (fork-aware deep links). */
+export interface SearchDocInput {
+  uuid: string;
+  body: string;
+  fork: string | null; // branch owning the message (null = live thread)
+  idx: number; // position within the message's own served view → page calc
+}
+
+export async function buildMetaAndDocs(file: SessionFile): Promise<{ meta: SessionMeta; searchDocs: SearchDocInput[] }> {
   const branches = new Set<string>();
   const skills = new Set<string>();
   const models = new Set<string>();
@@ -110,9 +120,14 @@ export async function buildMetaAndText(file: SessionFile): Promise<{ meta: Sessi
   const skillCost: Record<string, number> = {};
   const modelTokens: Record<string, number> = {};
   const modelCost: Record<string, number> = {};
-  const textParts: string[] = [];
+  // Per-message search text + the renderable sequence, so each doc can be
+  // located (view + position) after the fork analysis below.
+  const textDocs: { uuid: string | null; text: string }[] = [];
+  const renderSeq: (string | null)[] = [];
+  const forkCollector = createForkCollector();
 
   for await (const obj of iterateJsonl(file.filePath)) {
+    forkCollector.add(obj);
     const ts: string | undefined = obj.timestamp;
     if (ts) {
       if (!start || ts < start) start = ts;
@@ -214,15 +229,53 @@ export async function buildMetaAndText(file: SessionFile): Promise<{ meta: Sessi
     // Accumulate clean search text: user prompts + assistant text blocks only.
     // Excludes thinking, tool_use, tool_result, base64.
     if (msg && (type === "user" || type === "assistant")) {
+      renderSeq.push(typeof obj.uuid === "string" ? obj.uuid : null);
       const c = msg.content;
+      const parts: string[] = [];
       if (type === "user" && typeof c === "string") {
-        if (c.trim()) textParts.push(c);
+        if (c.trim()) parts.push(c);
       } else if (Array.isArray(c)) {
         for (const block of c) {
-          if (block?.type === "text" && block.text) textParts.push(block.text);
+          if (block?.type === "text" && block.text) parts.push(block.text);
         }
       }
+      if (parts.length) textDocs.push({ uuid: typeof obj.uuid === "string" ? obj.uuid : null, text: parts.join("\n") });
     }
+  }
+
+  // Locate every text-bearing message: owning view + position within it (the
+  // same view/order readDetail serves, so search hits deep-link to a page).
+  const analysis = forkCollector.finish();
+  const activeIdx = new Map<string, number>();
+  let ai = 0;
+  for (const uuid of renderSeq) {
+    if (uuid === null || analysis.forkOf(uuid) === null) {
+      if (uuid) activeIdx.set(uuid, ai);
+      ai++;
+    }
+  }
+  const forkIdx = new Map<string, number>();
+  for (const f of analysis.forks) {
+    const members = analysis.viewMembers(f.ref);
+    if (!members) continue;
+    let i = 0;
+    for (const uuid of renderSeq) {
+      if (uuid && members.has(uuid)) {
+        if (analysis.forkOf(uuid) === f.ref) forkIdx.set(uuid, i);
+        i++;
+      }
+    }
+  }
+  const searchDocs: SearchDocInput[] = [];
+  for (const d of textDocs) {
+    if (!d.uuid) continue;
+    const fork = analysis.forkOf(d.uuid);
+    searchDocs.push({
+      uuid: d.uuid,
+      body: d.text,
+      fork,
+      idx: (fork === null ? activeIdx.get(d.uuid) : forkIdx.get(d.uuid)) ?? 0,
+    });
   }
 
   if (!projectPath) projectPath = decodeProjectId(file.projectId);
@@ -262,13 +315,13 @@ export async function buildMetaAndText(file: SessionFile): Promise<{ meta: Sessi
       modelTokens,
       modelCost,
     },
-    searchText: textParts.join("\n"),
+    searchDocs,
   };
 }
 
-/** Build session metadata only (thin wrapper around buildMetaAndText). */
+/** Build session metadata only (thin wrapper around buildMetaAndDocs). */
 export async function buildMeta(file: SessionFile): Promise<SessionMeta> {
-  return (await buildMetaAndText(file)).meta;
+  return (await buildMetaAndDocs(file)).meta;
 }
 
 /** List subagent transcripts of a session (from the subagents/ dir + meta). */
@@ -394,6 +447,8 @@ function toThreadMessage(obj: any, toolNames: Map<string, string>): ThreadMessag
     isError,
     tokens: obj.type === "assistant" && msg?.usage ? tokensFromUsage(msg.usage) : null,
     blocks,
+    fork: null, // annotated after the fork analysis (subagent threads never fork)
+    forksHere: [],
   };
 }
 
@@ -403,7 +458,9 @@ const PERF = !!process.env.PERF;
 
 /** A session fully parsed once and held in memory for fast pagination. */
 interface ParsedSession {
-  messages: ThreadMessage[]; // all renderable turns, in order
+  messages: ThreadMessage[]; // all renderable turns, in order, fork-annotated
+  forks: ForkInfo[];
+  forkViews: Map<string, Set<string>>; // ref → renderable uuids of that view
   context: ContextPoint[];
   subagents: SubagentRef[];
   size: number;
@@ -448,10 +505,12 @@ async function getParsedSession(meta: SessionMeta): Promise<ParsedSession> {
   const seenUsage = new Set<string>();
   const messages: ThreadMessage[] = [];
   const toolNames = new Map<string, string>();
+  const forkCollector = createForkCollector();
   let lines = 0;
 
   for await (const obj of iterateJsonl(filePath)) {
     lines++;
+    forkCollector.add(obj);
     if (obj.type === "assistant" && obj.message) {
       recordToolUses(obj, toolNames);
       const usageKey = obj.requestId || obj.message.id || obj.uuid;
@@ -471,8 +530,18 @@ async function getParsedSession(meta: SessionMeta): Promise<ParsedSession> {
     messages.push(toThreadMessage(obj, toolNames));
   }
 
+  const analysis = forkCollector.finish();
+  const forkViews = new Map<string, Set<string>>();
+  for (const f of analysis.forks) forkViews.set(f.ref, analysis.viewMembers(f.ref)!);
+  for (const m of messages) {
+    m.fork = analysis.forkOf(m.uuid);
+    m.forksHere = analysis.forksAt(m.uuid);
+  }
+
   const parsed: ParsedSession = {
     messages,
+    forks: analysis.forks,
+    forkViews,
     context,
     subagents: listSubagents(meta.projectId, meta.id),
     size,
@@ -491,21 +560,35 @@ async function getParsedSession(meta: SessionMeta): Promise<ParsedSession> {
  * Read a session detail: paginated thread (renderable turns only), the full
  * context-fill curve, and subagent refs. The file is parsed once and cached;
  * pagination then slices the in-memory message array.
+ *
+ * `branch` selects the served view: null/undefined = live thread, "f1"… = the
+ * shared prefix + that abandoned subtree. Unknown ref → null (route 404s).
  */
 export async function readDetail(
   meta: SessionMeta,
   offset: number,
   limit: number,
-): Promise<SessionDetail> {
+  branch?: string | null,
+): Promise<SessionDetail | null> {
   const parsed = await getParsedSession(meta);
+  let view: ThreadMessage[];
+  if (!branch) {
+    view = parsed.messages.filter((m) => m.fork === null);
+  } else {
+    const members = parsed.forkViews.get(branch);
+    if (!members) return null;
+    view = parsed.messages.filter((m) => m.uuid !== null && members.has(m.uuid));
+  }
   return {
     meta,
-    messages: parsed.messages.slice(offset, offset + limit),
-    total: parsed.messages.length,
+    messages: view.slice(offset, offset + limit),
+    total: view.length,
     offset,
     limit,
     context: parsed.context,
     subagents: parsed.subagents,
+    forks: parsed.forks,
+    branch: branch ?? null,
   };
 }
 

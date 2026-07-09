@@ -1,5 +1,5 @@
-import { Profiler, useEffect, useRef, useState } from "react";
-import { useParams, Link, useSearchParams } from "react-router-dom";
+import { Fragment, Profiler, useEffect, useRef, useState } from "react";
+import { useParams, Link, useNavigate, useSearchParams } from "react-router-dom";
 import {
   Area,
   AreaChart,
@@ -32,11 +32,14 @@ export default function SessionDetail() {
   const t = useT();
   const { fmtDate, fmtTokens, fmtCost } = useFmt();
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
   // 1-indexed page in URL (?page=2); defaults to 1 when absent.
   const pageNum = Math.max(1, Number(searchParams.get("page") || "1"));
   const offset = (pageNum - 1) * PAGE;
+  // Served view (?branch=f1): null = live thread, "fN" = an abandoned fork.
+  const branch = searchParams.get("branch");
 
   const [data, setData] = useState<Detail | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -59,8 +62,39 @@ export default function SessionDetail() {
   useEffect(() => {
     if (!id) return;
     setData(null);
-    getDetail(id, offset, PAGE).then(setData).catch((e) => setErr(String(e)));
-  }, [id, offset]);
+    getDetail(id, offset, PAGE, branch).then(setData).catch((e) => setErr(String(e)));
+  }, [id, offset, branch]);
+
+  // Search deep-link (#msg-<uuid>): scroll to the hit and flash it once loaded.
+  useEffect(() => {
+    if (!data) return;
+    const hash = window.location.hash;
+    if (!hash.startsWith("#msg-")) return;
+    const el = document.getElementById(hash.slice(1));
+    if (!el) return;
+    el.scrollIntoView({ behavior: "instant", block: "center" });
+    el.classList.add("flash");
+    const timer = setTimeout(() => el.classList.remove("flash"), 2100);
+    return () => clearTimeout(timer);
+  }, [data]);
+
+  function goToBranch(ref: string | null) {
+    // Land on the divergence line of the branch we enter — or of the one we
+    // leave when returning to the live thread — so the reader keeps their
+    // bearings instead of being dropped at the top of the view.
+    const info = data?.forks.find((f) => f.ref === (ref ?? branch));
+    const idx = ref ? info?.forkPointIndex : info?.forkPointIndexLive;
+    const params = new URLSearchParams();
+    if (ref) params.set("branch", ref);
+    let hash = "";
+    if (info && idx !== undefined) {
+      const page = Math.floor(idx / PAGE) + 1;
+      if (page > 1) params.set("page", String(page));
+      hash = `#msg-${info.forkPointUuid}`;
+    }
+    const qs = params.toString();
+    navigate({ search: qs ? `?${qs}` : "", hash });
+  }
 
   // Scroll thread into view (instant) on page change, skip on first load.
   const firstLoad = useRef(true);
@@ -81,7 +115,10 @@ export default function SessionDetail() {
   }, [id]);
 
   function goToPage(p: number) {
-    setSearchParams(p === 1 ? {} : { page: String(p) });
+    const params: Record<string, string> = {};
+    if (p !== 1) params.page = String(p);
+    if (branch) params.branch = branch;
+    setSearchParams(params);
   }
 
   if (err) return <div className="center">{t("detail_error_prefix")}{err}</div>;
@@ -116,8 +153,32 @@ export default function SessionDetail() {
       {/* Row 3 left: messages + bottom pager */}
       <Profiler id="thread" onRender={onRenderThread ?? (() => {})}>
         <div ref={threadElRef} className="detail-thread">
+          {branch && (
+            <div className="fork-banner">
+              <span>⑂ {t("detail_fork_banner")} — {branch}</span>
+              <button onClick={() => goToBranch(null)}>{t("detail_fork_back")}</button>
+            </div>
+          )}
           {data.messages.map((msg, i) => (
-            <Message key={msg.uuid || i} m={msg} />
+            <Fragment key={msg.uuid || i}>
+              <Message m={msg} />
+              {msg.forksHere.length > 0 && (
+                // Permanent branch switcher at the divergence point: the live
+                // thread plus every branch forking here; the current view is
+                // disabled so the line always shows where you are.
+                <div className="fork-diverge">
+                  <span>{t("detail_fork_diverges")}</span>
+                  <button disabled={branch === null} onClick={() => goToBranch(null)}>
+                    {t("detail_fork_live")}
+                  </button>
+                  {msg.forksHere.map((ref) => (
+                    <button key={ref} disabled={ref === branch} onClick={() => goToBranch(ref)}>
+                      ⑂ {ref}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </Fragment>
           ))}
           <Pager page={pageNum} pages={pages} total={data.total} onPage={goToPage} />
         </div>
@@ -235,6 +296,38 @@ export default function SessionDetail() {
                       ))}
                     </div>
                   )}
+                </div>
+              ))}
+            </Panel>
+          )}
+
+          {data.forks.length > 0 && (
+            <Panel title={`${t("detail_panel_forks")} (${data.forks.length})`}>
+              <div style={{ marginBottom: 8 }}>
+                <button
+                  style={{ width: "100%", textAlign: "left", fontWeight: branch === null ? 700 : 400 }}
+                  onClick={() => goToBranch(null)}
+                  disabled={branch === null}
+                >
+                  {t("detail_fork_live")}
+                </button>
+              </div>
+              {data.forks.map((f) => (
+                <div key={f.ref} style={{ marginBottom: 8 }}>
+                  <button
+                    style={{ width: "100%", textAlign: "left", fontWeight: branch === f.ref ? 700 : 400 }}
+                    onClick={() => goToBranch(f.ref)}
+                    disabled={branch === f.ref}
+                    title={t("detail_fork_view")}
+                  >
+                    <strong>⑂ {f.ref}</strong> · {f.messageCount} {t("detail_fork_msgs")}
+                    {f.divergedAt && (
+                      <Chip style={{ marginLeft: 6 }}>{fmtDate(f.divergedAt)}</Chip>
+                    )}
+                    {f.preview && (
+                      <div className="muted" style={{ fontSize: 12 }}>{f.preview}</div>
+                    )}
+                  </button>
                 </div>
               ))}
             </Panel>

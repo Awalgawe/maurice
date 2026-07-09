@@ -2,8 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { listSessionFiles } from "./claudeDir.ts";
-import { buildMetaAndText } from "./parsers/sessions.ts";
-import { initSearchIndex, upsertDoc, pruneDocs, beginBatch, endBatch } from "./parsers/searchIndex.ts";
+import { buildMetaAndDocs } from "./parsers/sessions.ts";
+import { initSearchIndex, commitIndexVersion, upsertDocs, pruneDocs, beginBatch, endBatch } from "./parsers/searchIndex.ts";
 import type { SessionMeta } from "../src/types.ts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -61,8 +61,8 @@ export async function getIndex(): Promise<SessionMeta[]> {
       metas.push(prev.meta);
       continue;
     }
-    const { meta, searchText } = await buildMetaAndText(f);
-    try { upsertDoc(f.id, f.projectId, searchText); } catch (e) { console.warn("[search] upsert failed:", e); }
+    const { meta, searchDocs } = await buildMetaAndDocs(f);
+    try { upsertDocs(f.id, f.projectId, searchDocs); } catch (e) { console.warn("[search] upsert failed:", e); }
     next.entries[key] = { size: f.size, mtimeMs: f.mtimeMs, meta };
     metas.push(meta);
     reparsed++;
@@ -70,6 +70,8 @@ export async function getIndex(): Promise<SessionMeta[]> {
   try {
     pruneDocs(new Set(files.map((f) => f.id)));
     endBatch();
+    // Stamp only after a complete rebuild landed; a partial one must rerun.
+    if (fresh) commitIndexVersion();
   } catch (e) {
     console.warn("[search] prune/commit failed:", e);
   }

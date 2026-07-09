@@ -15,6 +15,8 @@ function msg(blocks: ThreadMessage["blocks"]): ThreadMessage {
     isError: false,
     tokens: null,
     blocks,
+    fork: null,
+    forksHere: [],
   };
 }
 

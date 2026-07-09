@@ -104,6 +104,13 @@ export const fr = {
   detail_copy_btn: "Copier la commande",
   detail_loading: "Chargement de la session…",
   detail_error_prefix: "Erreur : ",
+  detail_panel_forks: "Forks",
+  detail_fork_live: "Fil actif",
+  detail_fork_view: "Voir cette branche",
+  detail_fork_msgs: "msgs",
+  detail_fork_banner: "Vous regardez une branche abandonnée (rewind)",
+  detail_fork_back: "→ Revenir au fil actif",
+  detail_fork_diverges: "⑂ Le fil se sépare ici :",
 
   // Memories
   memories_filter_project: "Projet",
@@ -220,6 +227,8 @@ export const fr = {
   minimap_aria: "Minimap du fil — cliquer pour naviguer",
   message_error_chip: "erreur",
   message_sidechain: "sidechain",
+  message_fork_chip: "⑂ fork inactif",
+  sessions_hit_fork: "⑂ fork inactif",
   message_copy: "Copier le message",
   message_copied: "Copié ✓",
   message_copy_uuid: "Copier l'UUID",
