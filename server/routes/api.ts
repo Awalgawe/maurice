@@ -206,7 +206,9 @@ api.get("/sessions/:id", async (req, res) => {
   if (!meta) return res.status(404).json({ error: "session not found" });
   const offset = Math.max(0, Number(req.query.offset) || 0);
   const limit = Math.min(500, Math.max(1, Number(req.query.limit) || 100));
-  const detail = await readDetail(meta, offset, limit);
+  const branch = typeof req.query.branch === "string" && req.query.branch ? req.query.branch : null;
+  const detail = await readDetail(meta, offset, limit, branch);
+  if (!detail) return res.status(404).json({ error: "branch not found" });
   res.json(detail);
 });
 
@@ -287,8 +289,16 @@ api.get("/search", async (req, res) => {
 
   let out: SearchHit[];
   try {
-    const results = searchDocs(q, limit);
-    out = results
+    // Rows are per-message (rank-ordered); keep one hit per session, preferring
+    // a live-thread match over one buried in an abandoned fork.
+    const results = searchDocs(q, limit * 5);
+    const bySession = new Map<string, (typeof results)[number]>();
+    for (const r of results) {
+      const prev = bySession.get(r.sessionId);
+      if (!prev || (prev.fork !== null && r.fork === null)) bySession.set(r.sessionId, r);
+    }
+    out = [...bySession.values()]
+      .slice(0, limit)
       .map((r) => {
         const meta = metaById.get(r.sessionId);
         if (!meta) return null;
@@ -297,6 +307,9 @@ api.get("/search", async (req, res) => {
           projectId: r.projectId,
           projectLabel: meta.projectLabel,
           excerpt: r.excerpt,
+          uuid: r.uuid || null,
+          fork: r.fork,
+          index: r.idx,
         } satisfies SearchHit;
       })
       .filter((h): h is SearchHit => h !== null);
@@ -323,7 +336,8 @@ async function legacySearch(index: SessionMeta[], needle: string, limit: number)
       const s = index[i];
       const found = await searchFile(sessionFilePath(s.projectId, s.id), needle);
       if (found) {
-        hits.push({ i, hit: { sessionId: s.id, projectId: s.projectId, projectLabel: s.projectLabel, excerpt: found } });
+        // Line scan has no message resolution: no uuid/fork/index deep link.
+        hits.push({ i, hit: { sessionId: s.id, projectId: s.projectId, projectLabel: s.projectLabel, excerpt: found, uuid: null, fork: null, index: 0 } });
         if (hits.length >= limit) done = true;
       }
     }

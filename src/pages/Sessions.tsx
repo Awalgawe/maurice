@@ -79,6 +79,20 @@ export default function Sessions() {
     return parts.map((p, i) => (i % 2 === 1 ? <mark key={i}>{p}</mark> : p));
   }
 
+  // Deep-link a search hit to its message: right view (?branch), right page
+  // (from the hit's position — must mirror SessionDetail's PAGE), anchor+flash.
+  const DETAIL_PAGE = 200;
+  function sessionLink(id: string): string {
+    const hit = hitBySession?.get(id);
+    if (!hit || !hit.uuid) return `/sessions/${id}`;
+    const qs = new URLSearchParams();
+    const page = Math.floor(hit.index / DETAIL_PAGE) + 1;
+    if (page > 1) qs.set("page", String(page));
+    if (hit.fork) qs.set("branch", hit.fork);
+    const q = qs.toString();
+    return `/sessions/${id}${q ? `?${q}` : ""}#msg-${hit.uuid}`;
+  }
+
   const rows = useMemo(() => {
     const filtered = sessions.filter((s) => {
       if (project && s.projectId !== project) return false;
@@ -183,13 +197,20 @@ export default function Sessions() {
             )}
             <tr>
               <td>
-                <Link to={`/sessions/${s.id}`}>
+                <Link to={sessionLink(s.id)}>
                   <strong>{s.projectLabel}</strong>
                 </Link>
                 <div className="muted" style={{ fontSize: 12 }}>
-                  {hitBySession?.has(s.id)
-                    ? renderExcerpt(hitBySession.get(s.id)!.excerpt)
-                    : (s.firstUserPrompt || <em>—</em>)}
+                  {hitBySession?.has(s.id) ? (
+                    <>
+                      {hitBySession.get(s.id)!.fork !== null && (
+                        <span className="hit-fork-badge">{t("sessions_hit_fork")} </span>
+                      )}
+                      {renderExcerpt(hitBySession.get(s.id)!.excerpt)}
+                    </>
+                  ) : (
+                    s.firstUserPrompt || <em>—</em>
+                  )}
                 </div>
               </td>
               <td>{s.ticket ? <Chip variant="ticket">{s.ticket}</Chip> : ""}</td>

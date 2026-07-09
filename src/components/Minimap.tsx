@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from
 import type { MessageKind, ThreadMessage } from "../types";
 import { useT } from "../hooks/useT";
 
-type Strip = { topPct: number; kind: MessageKind; isError: boolean; index: number };
+type Strip = { topPct: number; kind: MessageKind; isError: boolean; forksHere: boolean; onFork: boolean; index: number };
 
 /**
  * A miniature of the whole thread shown as one thin colored line per message
@@ -48,6 +48,8 @@ export function Minimap({
         topPct: (top / h) * 100,
         kind: msg.kind,
         isError: msg.isError ?? false,
+        forksHere: msg.forksHere.length > 0,
+        onFork: msg.fork !== null,
         index: i,
       });
     });
@@ -137,9 +139,9 @@ export function Minimap({
           <button
             key={s.index}
             type="button"
-            className={`mm-strip kind-${s.kind}${s.isError ? " is-error" : ""}`}
+            className={`mm-strip kind-${s.kind}${s.onFork ? " on-fork" : ""}${s.forksHere ? " has-fork" : ""}${s.isError ? " is-error" : ""}`}
             style={{ top: `${s.topPct}%` }}
-            title={t(`message_kind_${s.kind}`)}
+            title={`${t(`message_kind_${s.kind}`)}${s.forksHere ? " ⑂" : ""}`}
             aria-label={t(`message_kind_${s.kind}`)}
             onClick={(e) => {
               e.stopPropagation();

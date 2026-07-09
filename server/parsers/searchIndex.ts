@@ -11,7 +11,7 @@ const { DatabaseSync } = _require("node:sqlite") as SqliteModule;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CACHE_DIR = path.join(__dirname, "..", "..", ".cache");
-const SEARCH_VERSION = 1;
+const SEARCH_VERSION = 2; // 2: one doc per message (uuid, fork, idx) for fork-aware deep links
 
 let searchDbPath = path.join(CACHE_DIR, "search.db");
 let db: DatabaseSync | null = null;
@@ -239,9 +239,11 @@ function initDb(dbPath: string): { fresh: boolean } {
   if (vRow?.v !== String(SEARCH_VERSION)) {
     conn.exec("DROP TABLE IF EXISTS docs");
     conn.exec(
-      "CREATE VIRTUAL TABLE docs USING fts5(body, session_id UNINDEXED, project_id UNINDEXED, tokenize='trigram')",
+      "CREATE VIRTUAL TABLE docs USING fts5(body, session_id UNINDEXED, project_id UNINDEXED, uuid UNINDEXED, fork UNINDEXED, idx UNINDEXED, tokenize='trigram')",
     );
-    conn.prepare("INSERT OR REPLACE INTO meta(k, v) VALUES (?, ?)").run("version", String(SEARCH_VERSION));
+    // The version is stamped by commitIndexVersion() only after the caller
+    // finishes the full rebuild — a crash/restart mid-rebuild (tsx watch…)
+    // must retrigger the rebuild, not leave a silently truncated index.
     console.log("[search] index created (FTS5 trigram, diacritics normalized)");
     fresh = true;
   }
@@ -262,11 +264,31 @@ export function initSearchIndex(): { fresh: boolean } {
   }
 }
 
-export function upsertDoc(sessionId: string, projectId: string, body: string): void {
+/** Stamp the schema version once a full rebuild has completed successfully. */
+export function commitIndexVersion(): void {
   if (!db || disabled) return;
-  const normalized = normalize(body);
+  try {
+    db.prepare("INSERT OR REPLACE INTO meta(k, v) VALUES (?, ?)").run("version", String(SEARCH_VERSION));
+  } catch (e) {
+    console.warn("[search] version stamp failed:", e);
+  }
+}
+
+export interface SearchDoc {
+  uuid: string;
+  body: string;
+  fork: string | null; // branch owning the message (null = live thread)
+  idx: number; // position within the message's own served view
+}
+
+/** Replace a session's documents: one row per text-bearing message. */
+export function upsertDocs(sessionId: string, projectId: string, docs: SearchDoc[]): void {
+  if (!db || disabled) return;
   db.prepare("DELETE FROM docs WHERE session_id = ?").run(sessionId);
-  db.prepare("INSERT INTO docs(body, session_id, project_id) VALUES (?, ?, ?)").run(normalized, sessionId, projectId);
+  const ins = db.prepare("INSERT INTO docs(body, session_id, project_id, uuid, fork, idx) VALUES (?, ?, ?, ?, ?, ?)");
+  for (const d of docs) {
+    ins.run(normalize(d.body), sessionId, projectId, d.uuid, d.fork ?? "", String(d.idx));
+  }
   invalidateDict();
 }
 
@@ -302,7 +324,7 @@ export function endBatch(): void {
 export function searchDocs(
   query: string,
   limit: number,
-): { sessionId: string; projectId: string; excerpt: string }[] {
+): { sessionId: string; projectId: string; excerpt: string; uuid: string; fork: string | null; idx: number }[] {
   if (!db || disabled) return [];
   const expr = buildMatchExpr(query);
   if (!expr) return [];
@@ -314,12 +336,15 @@ export function searchDocs(
     ...base.flatMap((t) => corrections(t)),
   ])].sort((a, b) => b.length - a.length);
   const rows = db
-    .prepare("SELECT session_id, project_id, body FROM docs WHERE docs MATCH ? ORDER BY rank LIMIT ?")
-    .all(expr, limit) as { session_id: string; project_id: string; body: string }[];
+    .prepare("SELECT session_id, project_id, body, uuid, fork, idx FROM docs WHERE docs MATCH ? ORDER BY rank LIMIT ?")
+    .all(expr, limit) as { session_id: string; project_id: string; body: string; uuid: string; fork: string; idx: string }[];
   return rows.map((r) => ({
     sessionId: r.session_id,
     projectId: r.project_id,
     excerpt: extractSnippet(r.body, tokens),
+    uuid: r.uuid,
+    fork: r.fork === "" ? null : r.fork,
+    idx: Number(r.idx) || 0,
   }));
 }
 

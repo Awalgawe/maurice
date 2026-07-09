@@ -41,13 +41,14 @@ export const Message = React.memo(function Message({ m, compact = false }: { m: 
     m.kind === "assistant" ? "assistant" : "user",
     `kind-${m.kind}`,
     m.isSidechain ? "sidechain" : "",
+    m.fork !== null ? "fork" : "",
     m.isError ? "haserror" : "",
   ]
     .filter(Boolean)
     .join(" ");
 
   return (
-    <div className={cls}>
+    <div className={cls} id={m.uuid ? `msg-${m.uuid}` : undefined}>
       <div
         className="head collapsible"
         role="button"
@@ -68,6 +69,7 @@ export const Message = React.memo(function Message({ m, compact = false }: { m: 
         )}
         {m.isError && <Chip variant="err">{t("message_error_chip")}</Chip>}
         {m.isSidechain && <Chip>{t("message_sidechain")}</Chip>}
+        {m.fork !== null && <Chip>{t("message_fork_chip")}</Chip>}
         <span className="head-actions">
           {m.uuid && (
             <button

@@ -17,6 +17,9 @@
   --green: #4ade80;
   --red: #f87171;
   --amber: #fbbf24;
+  /* Conversation forks (rewind branches) — distinct from red (errors),
+     accent (human) and accent-2 (subagents) in every theme. */
+  --fork: #e879f9;
   /* Categorical model colors (timeline bars / legends) */
   --model-opus: #a78bfa;
   --model-sonnet: #6ea8fe;
@@ -75,6 +78,7 @@
   --green: #4f8a68;
   --red: #b85c5c;
   --amber: #c98232;
+  --fork: #a94fb0;
   --model-opus: #7c5cd0;
   --model-sonnet: #4e6e91;
   --model-haiku: #4f8a68;
@@ -109,6 +113,7 @@
   --green: #77b98d;
   --red: #dd8585;
   --amber: #dea168;
+  --fork: #d693e0;
   --model-opus: #b39ddb;
   --model-sonnet: #8cafd6;
   --model-haiku: #77b98d;
@@ -298,7 +303,11 @@ tr.day-row td { background: var(--panel); color: var(--muted); font-size: 12px; 
 /* Landmarks: user turns and subagent boundaries read full strength. */
 .mm-strip.kind-human    { background: var(--accent);   opacity: .95; }
 .mm-strip.kind-subagent { background: var(--accent-2); opacity: .9; }
-.mm-strip.is-error      { background: var(--red); opacity: 1; height: 3px; }
+/* Abandoned-branch turns (fork view) tint --fork; the divergence point gets a
+   dash identical to the error one, in the fork color. Red wins over fork. */
+.mm-strip.on-fork  { background: var(--fork); opacity: .55; }
+.mm-strip.has-fork { background: var(--fork); opacity: 1; height: 3px; }
+.mm-strip.is-error { background: var(--red); opacity: 1; height: 3px; }
 .mm-strip:hover { opacity: 1; }
 .mm-view { position: absolute; left: -3px; right: -3px; background: var(--text); opacity: .1; border-radius: 3px; pointer-events: none; }
 .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px; margin-bottom: 16px; }
@@ -318,7 +327,22 @@ tr.day-row td { background: var(--panel); color: var(--muted); font-size: 12px; 
 .msg.user .head { border-left: 3px solid var(--accent); }
 .msg.assistant .head { border-left: 3px solid var(--accent-2); }
 .msg.sidechain { opacity: .85; }
+/* Rewind-abandoned branch: visibly "dead" next to live-thread turns. */
+.msg.fork { opacity: .7; border-style: dashed; }
+.msg.fork .head { border-left-style: dashed; }
 .msg.haserror .head { background: var(--msg-err-bg); }
+/* Search deep-link target: brief highlight so the eye lands on the hit. */
+.msg.flash { animation: msg-flash 2s ease-out; }
+@keyframes msg-flash { 0%, 40% { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); } 100% { box-shadow: none; } }
+/* Fork navigation: banner over the thread + divergence line between turns,
+   both in the same --fork color as the minimap dash. */
+.fork-banner { display: flex; align-items: center; gap: 10px; padding: 8px 12px; margin-bottom: 12px; border: 1px dashed var(--fork); border-radius: 10px; background: var(--panel); font-size: 13px; }
+.fork-diverge { display: flex; align-items: center; gap: 8px; margin: -4px 0 12px; padding: 6px 12px; font-size: 12px; color: var(--text); border: 1px dashed var(--fork); border-left: 3px solid var(--fork); border-radius: 10px; background: color-mix(in srgb, var(--fork) 8%, transparent); }
+.fork-diverge > span { color: var(--fork); font-weight: 600; }
+.fork-diverge button { font-size: 12px; padding: 1px 8px; }
+/* The disabled entry is the view being read — "you are here", not unusable. */
+.fork-diverge button:disabled { font-weight: 700; color: var(--text); border-color: var(--fork); opacity: 1; cursor: default; }
+.hit-fork-badge { color: var(--fork); font-size: 11px; white-space: nowrap; }
 .msg .body { padding: 10px 14px; }
 .msg .role { font-weight: 700; color: var(--text); }
 .msg .head-actions { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; }

@@ -64,8 +64,9 @@ export function createMcpServer(): McpServer {
     {
       title: "Search sessions",
       description:
-        "Full-text search across all Claude Code conversation logs. Returns matching sessions " +
-        "with a short excerpt. Use get_session to read a full thread.",
+        "Full-text search across all Claude Code conversation logs. Returns matching messages " +
+        "with a short excerpt; `fork` is set when the match sits on a rewind-abandoned branch " +
+        "(pass it as `branch` to get_session). Use get_session to read a full thread.",
       inputSchema: {
         q: z.string().min(3).describe("Search query (min 3 characters)"),
         limit: z.number().int().min(1).max(200).optional().describe("Max hits (default 50)"),
@@ -84,6 +85,9 @@ export function createMcpServer(): McpServer {
             projectId: r.projectId,
             projectLabel: meta.projectLabel,
             excerpt: r.excerpt,
+            uuid: r.uuid || null,
+            fork: r.fork,
+            index: r.idx,
           } satisfies SearchHit;
         })
         .filter((h): h is SearchHit => h !== null);
@@ -141,18 +145,21 @@ export function createMcpServer(): McpServer {
       title: "Get session detail",
       description:
         "Read a session thread: metadata, a page of messages, the context-window curve, and subagent refs. " +
-        "Messages are paginated — raise offset to read further.",
+        "Messages are paginated — raise offset to read further. The default view is the live thread; " +
+        "rewind-abandoned branches are listed in `forks` and readable via the `branch` parameter.",
       inputSchema: {
         id: z.string().describe("Session id (the .jsonl basename)"),
         offset: z.number().int().min(0).optional().describe("Message offset (default 0)"),
         limit: z.number().int().min(1).max(200).optional().describe("Max messages (default 50)"),
+        branch: z.string().optional().describe('Fork ref (e.g. "f1") to read an abandoned branch instead of the live thread'),
       },
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
-    async ({ id, offset, limit }) => {
+    async ({ id, offset, limit, branch }) => {
       const meta = (await getIndex()).find((s) => s.id === id);
       if (!meta) return { isError: true, content: [{ type: "text" as const, text: `session not found: ${id}` }] };
-      const detail = await readDetail(meta, Math.max(0, offset ?? 0), Math.min(200, Math.max(1, limit ?? 50)));
+      const detail = await readDetail(meta, Math.max(0, offset ?? 0), Math.min(200, Math.max(1, limit ?? 50)), branch ?? null);
+      if (!detail) return { isError: true, content: [{ type: "text" as const, text: `branch not found: ${branch}` }] };
       return json(detail);
     },
   );

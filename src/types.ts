@@ -83,6 +83,24 @@ export interface ThreadMessage {
   isError: boolean;
   tokens: TokenTotals | null;
   blocks: ContentBlock[];
+  // Rewind-abandoned branch owning this turn (null = live thread). Parallel
+  // tool-call siblings are NOT forks — they share the turn's requestId.
+  fork: string | null;
+  // Refs of the abandoned branches that diverge right after this turn.
+  forksHere: string[];
+}
+
+/** One rewind-abandoned branch of a session's parentUuid tree. */
+export interface ForkInfo {
+  ref: string; // stable per file version: "f1", "f2", … in file order
+  forkPointUuid: string; // last turn shared with the live thread
+  divergedAt: string | null; // timestamp where the branch splits off
+  messageCount: number; // renderable turns owned by the branch (prefix excluded)
+  preview: string | null; // first human prompt of the branch, truncated
+  // Position of the fork point within each served view, so the UI can land on
+  // the divergence line (page + anchor) when switching branches.
+  forkPointIndex: number; // …within this branch's own view
+  forkPointIndexLive: number; // …within the live thread view
 }
 
 export type ContentBlock =
@@ -109,11 +127,13 @@ export interface SubagentRef {
 export interface SessionDetail {
   meta: SessionMeta;
   messages: ThreadMessage[];
-  total: number; // total messages (for pagination)
+  total: number; // total messages of the served view (for pagination)
   offset: number;
   limit: number;
   context: ContextPoint[];
   subagents: SubagentRef[];
+  forks: ForkInfo[];
+  branch: string | null; // served view: null = live thread, "f1"… = a fork
 }
 
 export interface Facets {
@@ -130,6 +150,9 @@ export interface SearchHit {
   projectId: string;
   projectLabel: string;
   excerpt: string;
+  uuid: string | null; // matched message (null on legacy line-scan fallback)
+  fork: string | null; // branch owning the match (null = live thread)
+  index: number; // position of the message within its view → page deep-link
 }
 
 export interface ActiveSession {
