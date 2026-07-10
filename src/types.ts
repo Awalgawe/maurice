@@ -130,12 +130,24 @@ export interface ForkInfo {
   forkPointIndexLive: number; // …within the live thread view
 }
 
+/** A base64-encoded inline image (user attachment or tool_result payload). */
+export interface InlineImage {
+  mediaType: string;
+  data: string;
+}
+
 export type ContentBlock =
   | { kind: "text"; text: string }
   | { kind: "thinking"; text: string }
   | { kind: "tool_use"; name: string; isMcp: boolean; input: unknown; id: string | null }
-  | { kind: "tool_result"; isError: boolean; text: string; toolUseId: string | null }
-  | { kind: "image"; mediaType: string; data: string };
+  | {
+      kind: "tool_result";
+      isError: boolean;
+      text: string;
+      toolUseId: string | null;
+      images: InlineImage[];
+    }
+  | ({ kind: "image" } & InlineImage);
 
 export interface ContextPoint {
   t: string; // timestamp
