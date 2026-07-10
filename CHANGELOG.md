@@ -8,6 +8,11 @@ All notable changes to this project are documented in this file. Format loosely 
 
 - **Thread forks** — parse rewind-abandoned forked branches from the JSONL logs, expose them via the API/MCP (`branch` param on session detail, `fork`/`uuid`/`index` on search hits), and navigate into/out of a fork from the session detail view with a deep link back to the divergence point.
 - **Prompt-cache rewrite detection** — flag billed requests where an idle prompt cache (~5min TTL) or a context edit forced a full context rewrite instead of a cache read. Shown as an inline warning chip on the flagged message, aggregated per session (count + estimated wasted cost) as a sortable column in the sessions list, with a quick-nav panel on the detail page to jump to each flagged message.
+- **Inline image rendering** — render base64 image blocks embedded in the thread, both user-uploaded images and images returned by MCP tool results.
+
+### Fixed
+
+- **Responsive layout** — the sessions table and topbar now adapt to narrow windows.
 
 ## [0.1.0] - 2026-06-23
 
