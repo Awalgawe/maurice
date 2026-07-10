@@ -4,6 +4,7 @@ import type { Facets, SearchHit, SessionMeta } from "../types";
 import { getFilters, getSessions, search as apiSearch } from "../api";
 import { skillLabel, modelLabel, totalTokens } from "../format";
 import { useSortable } from "../hooks/useSortable";
+import { useMediaQuery } from "../hooks/useMediaQuery";
 import { useFmt } from "../hooks/useFmt";
 import { useT } from "../hooks/useT";
 import { Chip } from "../components/ui/Chip";
@@ -125,6 +126,14 @@ export default function Sessions() {
     return sortBy(filtered, val);
   }, [sessions, project, ticket, skill, model, mcp, errorsOnly, hitBySession, sortKey, sortDir]);
 
+  // 13 readable columns don't fit narrow windows; drop the least critical ones
+  // instead of squeezing or scrolling (breakpoints sized with the fixed column
+  // widths in index.css). Rendered conditionally so colgroup/th/td stay aligned.
+  const hideSubErr = useMediaQuery("(max-width: 1219px)");
+  const hideSkills = useMediaQuery("(max-width: 1100px)");
+  const hideModel = useMediaQuery("(max-width: 1020px)");
+  const visibleCols = 13 - (hideSubErr ? 2 : 0) - (hideSkills ? 1 : 0) - (hideModel ? 1 : 0);
+
   if (err) return <div className="center">{t("sessions_error_prefix")}{err}</div>;
   if (!sessions.length) return <div className="center">{t("sessions_loading")}</div>;
 
@@ -163,35 +172,35 @@ export default function Sessions() {
 
       <table className="sessions-table">
         <colgroup>
-          <col />
-          <col style={{ width: 88 }} />
-          <col style={{ width: 150 }} />
-          <col style={{ width: 132 }} />
-          <col style={{ width: 100 }} />
-          <col style={{ width: 132 }} />
-          <col style={{ width: 56 }} />
-          <col style={{ width: 74 }} />
-          <col style={{ width: 74 }} />
-          <col style={{ width: 74 }} />
-          <col style={{ width: 86 }} />
-          <col style={{ width: 52 }} />
-          <col style={{ width: 52 }} />
+          <col className="c-project" />
+          <col className="c-ticket" />
+          <col className="c-branch" />
+          {!hideSkills && <col className="c-skills" />}
+          {!hideModel && <col className="c-model" />}
+          <col className="c-date" />
+          <col className="c-msgs" />
+          <col className="c-tokens" />
+          <col className="c-cost" />
+          <col className="c-waste" />
+          <col className="c-ctx" />
+          {!hideSubErr && <col className="c-err" />}
+          {!hideSubErr && <col className="c-sub" />}
         </colgroup>
         <thead>
           <tr>
             <th>{t("sessions_col_project")}</th>
             <th>{t("sessions_col_ticket")}</th>
             <th>{t("sessions_col_branch")}</th>
-            <th>{t("sessions_col_skills")}</th>
-            <th>{t("sessions_col_model")}</th>
+            {!hideSkills && <th>{t("sessions_col_skills")}</th>}
+            {!hideModel && <th>{t("sessions_col_model")}</th>}
             <SortHeader k="end" label={t("sessions_col_date")} {...sortProps} />
             <SortHeader k="messageCount" label={t("sessions_col_msgs")} className="num" {...sortProps} />
             <SortHeader k="tokens" label={t("sessions_col_tokens")} className="num" {...sortProps} />
             <SortHeader k="estCostUSD" label={t("sessions_col_cost")} className="num" {...sortProps} />
             <SortHeader k="cacheRewriteWastedUSD" label={t("sessions_col_waste")} className="num" {...sortProps} />
             <SortHeader k="peakContextPct" label={t("sessions_col_ctx")} className="num" {...sortProps} />
-            <th className="num">{t("sessions_col_err")}</th>
-            <th className="num">{t("sessions_col_sub")}</th>
+            {!hideSubErr && <th className="num">{t("sessions_col_err")}</th>}
+            {!hideSubErr && <th className="num">{t("sessions_col_sub")}</th>}
           </tr>
         </thead>
         <tbody>
@@ -202,7 +211,7 @@ export default function Sessions() {
             <Fragment key={s.projectId + "/" + s.id}>
             {newDay && (
               <tr className="day-row">
-                <td colSpan={13}>{dayLabel(key)}</td>
+                <td colSpan={visibleCols}>{dayLabel(key)}</td>
               </tr>
             )}
             <tr>
@@ -223,25 +232,29 @@ export default function Sessions() {
                   )}
                 </div>
               </td>
-              <td>{s.ticket ? <Chip variant="ticket">{s.ticket}</Chip> : ""}</td>
+              <td>{s.ticket ? <Chip variant="ticket" title={s.ticket}>{s.ticket}</Chip> : ""}</td>
               <td>
                 {s.branches.slice(0, 2).map((b) => (
-                  <Chip key={b}>{b}</Chip>
+                  <Chip key={b} title={b}>{b}</Chip>
                 ))}
                 {s.branches.length > 2 && <Chip>+{s.branches.length - 2}</Chip>}
               </td>
-              <td>
-                {s.skills.slice(0, 3).map((k) => (
-                  <Chip variant="skill" key={k}>{skillLabel(k)}</Chip>
-                ))}
-                {s.skills.length > 3 && <Chip>+{s.skills.length - 3}</Chip>}
-              </td>
-              <td>
-                {s.models.slice(0, 2).map((m) => (
-                  <Chip variant="model" key={m}>{modelLabel(m)}</Chip>
-                ))}
-                {s.models.length > 2 && <Chip>+{s.models.length - 2}</Chip>}
-              </td>
+              {!hideSkills && (
+                <td>
+                  {s.skills.slice(0, 3).map((k) => (
+                    <Chip variant="skill" key={k} title={skillLabel(k)}>{skillLabel(k)}</Chip>
+                  ))}
+                  {s.skills.length > 3 && <Chip>+{s.skills.length - 3}</Chip>}
+                </td>
+              )}
+              {!hideModel && (
+                <td>
+                  {s.models.slice(0, 2).map((m) => (
+                    <Chip variant="model" key={m} title={modelLabel(m)}>{modelLabel(m)}</Chip>
+                  ))}
+                  {s.models.length > 2 && <Chip>+{s.models.length - 2}</Chip>}
+                </td>
+              )}
               <td className="muted date">{fmtDate(s.end)}</td>
               <td className="num">{s.messageCount}</td>
               <td className="num">{fmtTokens(totalTokens(s.tokens))}</td>
@@ -261,12 +274,16 @@ export default function Sessions() {
               <td className="num">
                 <ContextBar pct={s.peakContextPct} />
               </td>
-              <td className="num">
-                {s.errorCount > 0 ? <Chip variant="err">{s.errorCount}</Chip> : ""}
-              </td>
-              <td className="num">
-                {s.subagentCount > 0 ? <Chip variant="sub">{s.subagentCount}</Chip> : ""}
-              </td>
+              {!hideSubErr && (
+                <td className="num">
+                  {s.errorCount > 0 ? <Chip variant="err">{s.errorCount}</Chip> : ""}
+                </td>
+              )}
+              {!hideSubErr && (
+                <td className="num">
+                  {s.subagentCount > 0 ? <Chip variant="sub">{s.subagentCount}</Chip> : ""}
+                </td>
+              )}
             </tr>
             </Fragment>
             );
