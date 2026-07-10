@@ -93,6 +93,15 @@ export function extractBlocks(message: any): ContentBlock[] {
           toolUseId: c.tool_use_id || null,
         });
         break;
+      case "image":
+        if (c.source?.type === "base64" && c.source.data) {
+          blocks.push({
+            kind: "image",
+            mediaType: c.source.media_type || "image/png",
+            data: c.source.data,
+          });
+        }
+        break;
     }
   }
   return blocks;

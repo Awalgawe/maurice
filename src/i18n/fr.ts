@@ -221,6 +221,7 @@ export const fr = {
 
   // Message / Block
   block_thinking: "réflexion",
+  block_image_alt: "Image jointe",
   message_kind_human: "Utilisateur",
   message_kind_assistant: "Assistant",
   message_kind_tool_result: "Résultat d'outil",

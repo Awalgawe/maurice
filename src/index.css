@@ -389,6 +389,7 @@ tr.day-row td { background: var(--panel); color: var(--muted); font-size: 12px; 
 .block.tool_use .tname.mcp { color: var(--amber); }
 .block.tool_result { font-family: var(--mono); font-size: 12px; background: var(--panel-2); padding: 8px 10px; border-radius: 6px; white-space: pre-wrap; max-height: 240px; overflow: auto; }
 .block.tool_result.err { background: var(--msg-err-bg); color: #fca5a5; }
+.block.image img { max-width: 100%; max-height: 480px; border-radius: var(--radius-sm); border: 1px solid var(--border); display: block; }
 .markdown { line-height: 1.55; overflow-wrap: anywhere; }
 .markdown pre { background: var(--panel-2); padding: 10px; border-radius: 6px; overflow: auto; }
 .markdown code { font-family: var(--mono); font-size: 12px; }
