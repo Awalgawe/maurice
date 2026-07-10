@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import readline from "node:readline";
-import type { ContentBlock, TokenTotals } from "../../src/types.ts";
+import type { ContentBlock, InlineImage, TokenTotals } from "../../src/types.ts";
 
 /** Async-iterate the parsed JSON objects of a .jsonl file, skipping bad lines. */
 export async function* iterateJsonl(filePath: string): AsyncGenerator<any> {
@@ -91,17 +91,14 @@ export function extractBlocks(message: any): ContentBlock[] {
           isError: c.is_error === true,
           text: stringifyToolResult(c.content),
           toolUseId: c.tool_use_id || null,
+          images: extractInlineImages(c.content),
         });
         break;
-      case "image":
-        if (c.source?.type === "base64" && c.source.data) {
-          blocks.push({
-            kind: "image",
-            mediaType: c.source.media_type || "image/png",
-            data: c.source.data,
-          });
-        }
+      case "image": {
+        const img = toInlineImage(c);
+        if (img) blocks.push({ kind: "image", ...img });
         break;
+      }
     }
   }
   return blocks;
@@ -112,8 +109,32 @@ export function stringifyToolResult(content: any): string {
   if (typeof content === "string") return content;
   if (Array.isArray(content)) {
     return content
+      // Image sub-blocks are surfaced separately (see extractInlineImages); keep
+      // their base64 payload out of the text so it isn't dumped as raw JSON.
+      .filter((c) => !isImageBlock(c))
       .map((c) => (typeof c === "string" ? c : c?.text ?? JSON.stringify(c)))
       .join("\n");
   }
   return JSON.stringify(content);
+}
+
+function isImageBlock(c: any): boolean {
+  return !!c && typeof c === "object" && c.type === "image";
+}
+
+/** Pull a base64 InlineImage out of an `image` content block, or null. */
+function toInlineImage(c: any): InlineImage | null {
+  if (!isImageBlock(c) || c.source?.type !== "base64" || !c.source.data) return null;
+  return { mediaType: c.source.media_type || "image/png", data: c.source.data };
+}
+
+/** Base64 images embedded in a tool_result's content array (e.g. MCP screenshots). */
+export function extractInlineImages(content: any): InlineImage[] {
+  if (!Array.isArray(content)) return [];
+  const images: InlineImage[] = [];
+  for (const c of content) {
+    const img = toInlineImage(c);
+    if (img) images.push(img);
+  }
+  return images;
 }

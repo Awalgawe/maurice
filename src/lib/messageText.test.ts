@@ -50,9 +50,11 @@ describe("messageToText", () => {
   });
 
   it("renders tool_result text verbatim", () => {
-    expect(messageToText(msg([{ kind: "tool_result", isError: false, text: "output here", toolUseId: null }]))).toBe(
-      "output here",
-    );
+    expect(
+      messageToText(
+        msg([{ kind: "tool_result", isError: false, text: "output here", toolUseId: null, images: [] }]),
+      ),
+    ).toBe("output here");
   });
 
   it("returns empty string for a message with no blocks", () => {
