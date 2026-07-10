@@ -134,7 +134,8 @@ export type ContentBlock =
   | { kind: "text"; text: string }
   | { kind: "thinking"; text: string }
   | { kind: "tool_use"; name: string; isMcp: boolean; input: unknown; id: string | null }
-  | { kind: "tool_result"; isError: boolean; text: string; toolUseId: string | null };
+  | { kind: "tool_result"; isError: boolean; text: string; toolUseId: string | null }
+  | { kind: "image"; mediaType: string; data: string };
 
 export interface ContextPoint {
   t: string; // timestamp

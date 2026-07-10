@@ -210,6 +210,7 @@ export const en: Record<I18nKey, string> = {
   pager_count: "messages",
 
   block_thinking: "thinking",
+  block_image_alt: "Attached image",
   message_kind_human: "User",
   message_kind_assistant: "Assistant",
   message_kind_tool_result: "Tool result",

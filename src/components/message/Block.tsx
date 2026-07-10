@@ -36,5 +36,11 @@ export function Block({ b, compact }: { b: ContentBlock; compact: boolean }) {
     }
     case "tool_result":
       return <ToolResultBlock b={b} />;
+    case "image":
+      return (
+        <div className="block image">
+          <img src={`data:${b.mediaType};base64,${b.data}`} alt={t("block_image_alt")} />
+        </div>
+      );
   }
 }
