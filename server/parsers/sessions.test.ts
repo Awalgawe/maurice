@@ -194,6 +194,7 @@ describe("classifyMessage", () => {
     isError: false,
     text: "output",
     toolUseId,
+    images: [],
   });
 
   it("labels an assistant turn as assistant", () => {

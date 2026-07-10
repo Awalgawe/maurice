@@ -32,15 +32,31 @@ export function ToolResultBlock({ b }: { b: Extract<ContentBlock, { kind: "tool_
     return <span dangerouslySetInnerHTML={{ __html: ansiToHtml(body) }} />;
   }, [body, isJson]);
 
+  const hasImages = b.images.length > 0;
+
   return (
-    <div className={"block tool_result" + (b.isError ? " err" : "")}>
-      {reminder && (
-        <details className="tool-reminder">
-          <summary>⚠ {t("tool_result_reminder")}</summary>
-          <span>{reminder}</span>
-        </details>
+    <>
+      <div className={"block tool_result" + (b.isError ? " err" : "")}>
+        {reminder && (
+          <details className="tool-reminder">
+            <summary>⚠ {t("tool_result_reminder")}</summary>
+            <span>{reminder}</span>
+          </details>
+        )}
+        {bodyNode ??
+          (!reminder && !hasImages && <span className="muted">{t("tool_result_empty")}</span>)}
+      </div>
+      {hasImages && (
+        <div className="block image tool-result-images">
+          {b.images.map((img, i) => (
+            <img
+              key={i}
+              src={`data:${img.mediaType};base64,${img.data}`}
+              alt={t("block_image_alt")}
+            />
+          ))}
+        </div>
       )}
-      {bodyNode ?? (!reminder && <span className="muted">{t("tool_result_empty")}</span>)}
-    </div>
+    </>
   );
 }

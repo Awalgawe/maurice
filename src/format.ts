@@ -10,6 +10,8 @@ export function fmtCost(n: number, locale?: string): string {
   return new Intl.NumberFormat(locale, {
     style: "currency",
     currency: "USD",
+    // "$"/"$ " instead of "$US" — everything is USD, the long symbol only costs width.
+    currencyDisplay: "narrowSymbol",
     minimumFractionDigits: digits,
     maximumFractionDigits: digits,
   }).format(n);
