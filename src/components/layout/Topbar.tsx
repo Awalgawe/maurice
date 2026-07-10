@@ -13,7 +13,7 @@ export function Topbar() {
   const { fmtCost, fmtTokens } = useFmt();
   const active = useActiveSession();
   return (
-    <header className="topbar">
+    <header className={active ? "topbar topbar--live" : "topbar"}>
       <div className="brand">
         <img src="/favicon.png" className="brand-icon" aria-hidden="true" />
         Maurice
@@ -40,23 +40,23 @@ export function Topbar() {
             <span className="live-project">
               {active.sessionCount > 1 ? t("live_multiple") : active.projectPath.split("/").slice(-2).join("/")}
             </span>
-            <span className="live-sep" />
-            <span className="live-stat">{fmtElapsed(active.elapsedMs)}</span>
-            <span className="live-sep" />
-            <span className="live-stat">{fmtTokens(totalTokens(active.tokens))}</span>
+            <span className="live-sep live-extra" />
+            <span className="live-stat live-extra">{fmtElapsed(active.elapsedMs)}</span>
+            <span className="live-sep live-extra" />
+            <span className="live-stat live-extra">{fmtTokens(totalTokens(active.tokens))}</span>
             <span className="live-sep" />
             <span className="live-stat" style={{ color: "var(--green)" }}>{fmtCost(active.estCostUSD)}</span>
             {active.model && (
               <>
-                <span className="live-sep" />
-                <span className="live-stat" style={{ color: "var(--chip-model-color)" }}>{modelLabel(active.model)}</span>
+                <span className="live-sep live-extra" />
+                <span className="live-stat live-extra" style={{ color: "var(--chip-model-color)" }}>{modelLabel(active.model)}</span>
               </>
             )}
           </div>
           <div className="topbar-sep" />
         </>
       )}
-      <div style={{ display: "flex", gap: 6 }}>
+      <div className="topbar-tools">
         <EditorSelect />
         <LangSelect />
         <ThemeSelect />

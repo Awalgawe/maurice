@@ -162,6 +162,7 @@ a:hover { text-decoration: underline; }
   font-size: 15px;
   letter-spacing: -.2px;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 .brand-icon { width: 22px; height: 22px; flex-shrink: 0; }
 .topbar .brand span { color: var(--accent); }
@@ -171,7 +172,7 @@ a:hover { text-decoration: underline; }
   background: var(--border);
   flex-shrink: 0;
 }
-.nav { display: flex; gap: 0; height: 100%; }
+.nav { display: flex; gap: 0; height: 100%; flex-shrink: 0; }
 .nav a {
   display: flex;
   align-items: center;
@@ -181,11 +182,43 @@ a:hover { text-decoration: underline; }
   text-decoration: none;
   border-bottom: 2px solid transparent;
   transition: color .15s, border-color .15s;
+  white-space: nowrap;
 }
 .nav a:hover { color: var(--text); }
 .nav a.active { color: var(--text); border-bottom-color: var(--color-active); }
 .topbar .spacer { flex: 1; }
-.topbar .hint { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.topbar-tools { display: flex; gap: 6px; flex-shrink: 0; }
+.topbar .hint { color: var(--muted); font-size: 12px; white-space: nowrap; flex-shrink: 0; }
+
+/* The topbar needs ~1820px with a LIVE session (~1440px without). It must stay
+   a single line without overflowing the page, so shed the least critical
+   content in tiers as the window narrows. */
+@media (max-width: 1799px) {
+  .topbar .hint, .topbar .topbar-tools + .topbar-sep { display: none; }
+}
+@media (max-width: 1599px) {
+  .topbar .live-extra { display: none; }
+}
+/* The LIVE indicator adds ~290px, so a live topbar must shed sooner. */
+@media (max-width: 1549px) {
+  .topbar--live .nav a { padding: 0 8px; }
+  .topbar--live .live-project { max-width: 120px; }
+  .topbar--live .topbar-tools .select-with-icon:not(:first-child) { display: none; }
+}
+@media (max-width: 1299px) {
+  .nav a { padding: 0 8px; }
+  /* Keep only the editor selector; lang/theme are persisted preferences. */
+  .topbar-tools .select-with-icon:not(:first-child) { display: none; }
+}
+@media (max-width: 1199px) {
+  .topbar-tools, .topbar-live + .topbar-sep { display: none; }
+}
+@media (max-width: 1059px) {
+  .live-project { display: none; }
+}
+@media (max-width: 949px) {
+  .nav a { padding: 0 6px; }
+}
 
 .content { padding: 40px; max-width: 1400px; width: 100%; margin: 0 auto; }
 .content--full { max-width: none; }
@@ -223,11 +256,34 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 td.date { white-space: nowrap; }
 tr.day-row td { background: var(--panel); color: var(--muted); font-size: 12px; font-weight: 600; padding: var(--space-2) var(--space-3); border-top: 1px solid var(--border); }
 
-/* Sessions: fixed layout so the 12 columns always fit the container; long
-   text wraps and overflowing chip values truncate instead of pushing width. */
+/* Sessions: fixed layout, never wider than the container. Numeric/date columns
+   get explicit widths sized to their real content (fr + en locales); the
+   project column gets a guaranteed share; the chip columns (branch, skills,
+   model) are left auto so they absorb window shrinking — their chips already
+   truncate with ellipsis. Below ~1150px, Sessions.tsx drops low-priority
+   columns entirely rather than squeezing (keep breakpoints in sync there). */
 .sessions-table { table-layout: fixed; }
-.sessions-table td { vertical-align: top; overflow-wrap: anywhere; }
+.sessions-table col.c-project { width: 24%; }
+.sessions-table col.c-ticket { width: 110px; }
+.sessions-table col.c-date { width: 132px; }
+.sessions-table col.c-msgs { width: 48px; }
+.sessions-table col.c-tokens { width: 70px; }
+.sessions-table col.c-cost { width: 78px; }
+.sessions-table col.c-waste { width: 96px; }
+.sessions-table col.c-ctx { width: 72px; }
+.sessions-table col.c-err { width: 52px; }
+.sessions-table col.c-sub { width: 52px; }
+.sessions-table td { vertical-align: top; }
+/* Break-anywhere is for long prompts/paths in the project column only —
+   applied wider, it splits currency and token values across lines. */
+.sessions-table td:first-child { overflow-wrap: anywhere; }
+.sessions-table .num { white-space: nowrap; }
 .sessions-table .chip { max-width: 100%; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; }
+
+@media (max-width: 1440px) {
+  .content { padding: 40px 24px; }
+  .sessions-table th, .sessions-table td { padding-left: 6px; padding-right: 6px; }
+}
 
 /* Chips / badges */
 .chip {
@@ -484,7 +540,7 @@ tr.day-row td { background: var(--panel); color: var(--muted); font-size: 12px; 
 .ide-file-open:hover { border-color: var(--accent); color: var(--accent); }
 
 /* Live session indicator (topbar) */
-.topbar-live { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.topbar-live { display: flex; align-items: center; gap: 8px; font-size: 12px; flex-shrink: 0; }
 .live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); flex-shrink: 0; animation: live-pulse 1.6s ease-in-out infinite; }
 @keyframes live-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
 .live-label { font-size: 10px; font-weight: 700; letter-spacing: .8px; color: var(--green); }
