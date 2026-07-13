@@ -10,7 +10,7 @@ import type {
   SearchHit,
   SessionDetail,
   SessionMeta,
-  ThreadMessage,
+  SubagentDetail,
 } from "./types";
 
 async function get<T>(url: string): Promise<T> {
@@ -30,7 +30,7 @@ export const getDetail = (id: string, offset = 0, limit = 200, branch: string | 
     `/api/sessions/${id}?offset=${offset}&limit=${limit}${branch ? `&branch=${encodeURIComponent(branch)}` : ""}`,
   );
 export const getSubagent = (id: string, ref: string) =>
-  get<{ messages: ThreadMessage[] }>(`/api/sessions/${id}/subagents/${ref}`);
+  get<SubagentDetail>(`/api/sessions/${id}/subagents/${encodeURIComponent(ref)}`);
 export const search = (q: string) =>
   get<SearchHit[]>(`/api/search?q=${encodeURIComponent(q)}`);
 export const getMemories = () => get<MemoryEntry[]>("/api/memories");

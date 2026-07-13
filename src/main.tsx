@@ -6,6 +6,7 @@ import "highlight.js/styles/atom-one-dark.css";
 import Dashboard from "./pages/Dashboard";
 import Sessions from "./pages/Sessions";
 import SessionDetail from "./pages/SessionDetail";
+import SubagentDetailPage from "./pages/SubagentDetailPage";
 import Workflow from "./pages/Workflow";
 import Timeline from "./pages/Timeline";
 import Memories from "./pages/Memories";
@@ -28,6 +29,7 @@ function Main() {
         <Route path="/" element={<Dashboard />} />
         <Route path="/sessions" element={<Sessions />} />
         <Route path="/sessions/:id" element={<SessionDetail />} />
+        <Route path="/sessions/:id/subagents/:ref" element={<SubagentDetailPage />} />
         <Route path="/workflow" element={<Workflow />} />
         <Route path="/timeline" element={<Timeline />} />
         <Route path="/memories" element={<Memories />} />
