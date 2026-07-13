@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { estimateCost, estimateCostByComponent } from "./pricing.ts";
+import { contextWindowFor, estimateCost, estimateCostByComponent } from "./pricing.ts";
 
 const bundle = { input: 1_000_000, output: 1_000_000, cacheRead: 0, cacheCreate: 0 };
 
@@ -39,6 +39,39 @@ describe("estimateCost", () => {
 
   it("returns 0 for an empty bundle", () => {
     expect(estimateCost("claude-opus-4-8", { input: 0, output: 0, cacheRead: 0, cacheCreate: 0 })).toBe(0);
+  });
+});
+
+describe("contextWindowFor", () => {
+  it("gives Fable a 1M window", () => {
+    expect(contextWindowFor("claude-fable-5")).toBe(1_000_000);
+  });
+
+  it("honors the [1m] beta suffix over the family default", () => {
+    expect(contextWindowFor("claude-sonnet-4-6[1m]")).toBe(1_000_000);
+  });
+
+  it("gives Opus 4.5+ a native 1M window", () => {
+    expect(contextWindowFor("claude-opus-4-5")).toBe(1_000_000);
+    expect(contextWindowFor("claude-opus-4-8")).toBe(1_000_000);
+    expect(contextWindowFor("claude-opus-5")).toBe(1_000_000);
+  });
+
+  it("gives Sonnet 5+ a native 1M window", () => {
+    expect(contextWindowFor("claude-sonnet-5")).toBe(1_000_000);
+  });
+
+  it("keeps 200k for older versions and Haiku, ignoring date suffixes", () => {
+    expect(contextWindowFor("claude-opus-4-1-20250805")).toBe(200_000);
+    expect(contextWindowFor("claude-sonnet-4-6")).toBe(200_000);
+    expect(contextWindowFor("claude-haiku-4-5-20251001")).toBe(200_000);
+  });
+
+  it("falls back to CONTEXT_WINDOW for null, empty, and pseudo-models", () => {
+    expect(contextWindowFor(null)).toBe(200_000);
+    expect(contextWindowFor(undefined)).toBe(200_000);
+    expect(contextWindowFor("")).toBe(200_000);
+    expect(contextWindowFor("<synthetic>")).toBe(200_000);
   });
 });
 

@@ -88,7 +88,7 @@ export const en: Record<I18nKey, string> = {
   detail_period: "Period",
   detail_msgs: "msgs",
   detail_ctx_panel_prefix: "Context window usage (peak ",
-  detail_ctx_hint: "A drop = compaction. Yellow line = 80%.",
+  detail_ctx_hint: "A drop = compaction. Yellow line = 80%. Dashed vertical line = model change.",
   detail_ctx_empty: "Not enough data.",
   detail_chart_tooltip: "Context",
   detail_panel_mcp: "MCP Tools",

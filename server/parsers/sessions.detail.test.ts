@@ -22,18 +22,25 @@ const human = (uuid: string, parent: string | null, text: string, ts: string) =>
   message: { role: "user", content: text },
 });
 
-const assistant = (uuid: string, parent: string | null, requestId: string, ts: string) => ({
+const assistant = (
+  uuid: string,
+  parent: string | null,
+  requestId: string,
+  ts: string,
+  opts: { model?: string; usage?: object; sidechain?: boolean } = {},
+) => ({
   uuid,
   parentUuid: parent,
   type: "assistant",
   timestamp: ts,
   requestId,
+  ...(opts.sidechain ? { isSidechain: true } : {}),
   message: {
     id: `msg_${requestId}`,
     role: "assistant",
-    model: "claude-sonnet-4-6",
+    model: opts.model ?? "claude-sonnet-4-6",
     content: [{ type: "text", text: `answer ${uuid}` }],
-    usage: { input_tokens: 10, output_tokens: 5 },
+    usage: opts.usage ?? { input_tokens: 10, output_tokens: 5 },
   },
 });
 
@@ -100,6 +107,45 @@ describe("readDetail fork views", () => {
 
   it("returns null for an unknown branch ref", async () => {
     expect(await readDetail(meta, 0, 100, "f9")).toBeNull();
+  });
+});
+
+describe("context curve per-model windows", () => {
+  const CTX_SESSION = "s-models";
+
+  const ctxLines = [
+    human("u1", null, "start", "2026-01-01T10:00:00Z"),
+    // 100k on Sonnet (200k window) → 50%
+    assistant("a1", "u1", "c1", "2026-01-01T10:00:05Z",
+      { usage: { input_tokens: 100_000, output_tokens: 5 } }),
+    // Same 100k on Fable (1M window) → 10%: model change vs a1
+    assistant("a2", "a1", "c2", "2026-01-01T10:01:05Z",
+      { model: "claude-fable-5", usage: { input_tokens: 100_000, output_tokens: 5 } }),
+    // Subagent turn: flagged sidechain so the UI skips it for markers
+    assistant("a3", "a2", "c3", "2026-01-01T10:02:05Z",
+      { model: "claude-fable-5", sidechain: true, usage: { input_tokens: 50_000, output_tokens: 5 } }),
+    // 300k on Sonnet with the 1M beta suffix → 30% (old global window clamped this to 100%)
+    assistant("a4", "a3", "c4", "2026-01-01T10:03:05Z",
+      { model: "claude-sonnet-4-6[1m]", usage: { input_tokens: 300_000, output_tokens: 5 } }),
+  ];
+
+  it("computes per-point pct over each turn's model window", async () => {
+    const fp3 = sessionFilePath(PROJECT, CTX_SESSION);
+    fs.writeFileSync(fp3, ctxLines.map((l) => JSON.stringify(l)).join("\n") + "\n");
+    const stat3 = fs.statSync(fp3);
+    const meta3 = await buildMeta({ id: CTX_SESSION, projectId: PROJECT, filePath: fp3, size: stat3.size, mtimeMs: stat3.mtimeMs });
+    const d = await readDetail(meta3, 0, 100);
+    expect(d!.context).toHaveLength(4);
+    expect(d!.context[0]).toMatchObject({ pct: 50, model: "claude-sonnet-4-6" });
+    expect(d!.context[0].sidechain).toBeUndefined();
+    expect(d!.context[1]).toMatchObject({ pct: 10, model: "claude-fable-5" });
+    expect(d!.context[2]).toMatchObject({ model: "claude-fable-5", sidechain: true });
+    expect(d!.context[3]).toMatchObject({ pct: 30, model: "claude-sonnet-4-6[1m]" });
+    // Peak pct is the max of per-turn ratios (the 50% Sonnet turn), while the
+    // raw token peak comes from the 300k [1m] turn — the pair proves the pct
+    // is no longer rawMax/globalWindow.
+    expect(meta3.peakContextPct).toBe(50);
+    expect(meta3.peakContextTokens).toBe(300_000);
   });
 });
 

@@ -92,7 +92,7 @@ export const fr = {
   detail_period: "Période",
   detail_msgs: "msgs",
   detail_ctx_panel_prefix: "Remplissage du context window (pic ",
-  detail_ctx_hint: "Une chute = compaction. Ligne jaune = 80 %.",
+  detail_ctx_hint: "Une chute = compaction. Ligne jaune = 80 %. Ligne verticale pointillée = changement de modèle.",
   detail_ctx_empty: "Pas assez de données.",
   detail_chart_tooltip: "Contexte",
   detail_panel_mcp: "Outils MCP",

@@ -1,14 +1,13 @@
 import fs from "node:fs";
 import path from "node:path";
 import {
-  CONTEXT_WINDOW,
   decodeProjectId,
   projectLabel,
   sessionFilePath,
   subagentsDir,
   type SessionFile,
 } from "../claudeDir.ts";
-import { estimateCost, estimateCostByComponent } from "../pricing.ts";
+import { contextWindowFor, estimateCost, estimateCostByComponent } from "../pricing.ts";
 import {
   contextTokens,
   emptyTokens,
@@ -105,6 +104,7 @@ export async function buildMetaAndDocs(file: SessionFile): Promise<{ meta: Sessi
   const errors: SessionError[] = []; // bounded to the last MAX_SESSION_ERRORS
   const toolNameById = new Map<string, string>(); // tool_use_id → tool name
   let peakContextTokens = 0;
+  let peakContextPct = 0; // max of per-turn ctx/window(model) — not derivable from peakContextTokens
   let projectPath = "";
   let firstUserPrompt: string | null = null;
   // Cost is summed per-turn so each turn uses its own model's price.
@@ -193,6 +193,8 @@ export async function buildMetaAndDocs(file: SessionFile): Promise<{ meta: Sessi
         modelCost[mk] = (modelCost[mk] || 0) + turnCost;
         const ctx = contextTokens(msg.usage);
         if (ctx > peakContextTokens) peakContextTokens = ctx;
+        const ctxPct = (ctx / contextWindowFor(msg.model)) * 100;
+        if (ctxPct > peakContextPct) peakContextPct = ctxPct;
         // Cache-rewrite anomalies: main-thread requests only (sidechains bill
         // on their own cache stream and would corrupt the previous-context chain).
         if (obj.isSidechain !== true) {
@@ -317,7 +319,7 @@ export async function buildMetaAndDocs(file: SessionFile): Promise<{ meta: Sessi
       activityHeat,
       costByComponent,
       peakContextTokens,
-      peakContextPct: Math.min(100, (peakContextTokens / CONTEXT_WINDOW) * 100),
+      peakContextPct: Math.min(100, peakContextPct),
       errorCount,
       hasErrors: errorCount > 0,
       errors,
@@ -543,10 +545,13 @@ async function getParsedSession(meta: SessionMeta): Promise<ParsedSession> {
         seenUsage.add(usageKey);
         const ctx = contextTokens(obj.message.usage);
         if (ctx > 0) {
+          const model = isRealModel(obj.message.model) ? obj.message.model : null;
           context.push({
             t: obj.timestamp ?? "",
             contextTokens: ctx,
-            pct: Math.min(100, (ctx / CONTEXT_WINDOW) * 100),
+            pct: Math.min(100, (ctx / contextWindowFor(model)) * 100),
+            model,
+            sidechain: obj.isSidechain === true || undefined,
           });
         }
         if (obj.isSidechain !== true) {

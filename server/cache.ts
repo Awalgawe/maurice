@@ -9,7 +9,7 @@ import type { SessionMeta } from "../src/types.ts";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CACHE_DIR = path.join(__dirname, "..", ".cache");
 const CACHE_FILE = path.join(CACHE_DIR, "index.json");
-const CACHE_VERSION = 10; // 10: cacheRewriteCount + cacheRewriteWastedUSD
+const CACHE_VERSION = 12; // 12: 1M window for Opus 4.5+ / Sonnet 5+
 
 interface CacheEntry {
   size: number;
