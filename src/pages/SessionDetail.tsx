@@ -145,6 +145,17 @@ export default function SessionDetail() {
 
   const m = data.meta;
   const peak = data.context.reduce((a, b) => Math.max(a, b.pct), 0);
+  // Model switches on the main thread only — a subagent (sidechain) turn on a
+  // different model is not a conversation-level model change.
+  const modelChanges: { t: string; model: string }[] = [];
+  {
+    let prev: string | null = null;
+    for (const p of data.context) {
+      if (p.sidechain || !p.model) continue;
+      if (prev !== null && p.model !== prev) modelChanges.push({ t: p.t, model: p.model });
+      prev = p.model;
+    }
+  }
   const pages = Math.ceil(data.total / PAGE);
 
   return (
@@ -255,9 +266,26 @@ export default function SessionDetail() {
                   <Tooltip
                     contentStyle={{ background: "#1e222b", border: "1px solid #2a2f3a", borderRadius: 6 }}
                     labelFormatter={(v) => fmtDate(String(v))}
-                    formatter={(v: number) => [`${v.toFixed(0)}%`, t("detail_chart_tooltip")]}
+                    formatter={(v: number, _name, item: { payload?: { model?: string | null } }) => [
+                      `${v.toFixed(0)}%${item?.payload?.model ? ` — ${item.payload.model}` : ""}`,
+                      t("detail_chart_tooltip"),
+                    ]}
                   />
                   <ReferenceLine y={80} stroke="#fbbf24" strokeDasharray="4 4" />
+                  {modelChanges.map((c) => (
+                    <ReferenceLine
+                      key={c.t}
+                      x={c.t}
+                      stroke="#c084fc"
+                      strokeDasharray="4 4"
+                      label={{
+                        value: c.model.replace(/^claude-/, ""),
+                        fill: "#c084fc",
+                        fontSize: 10,
+                        position: "insideTopRight",
+                      }}
+                    />
+                  ))}
                   <Area
                     type="monotone"
                     dataKey="pct"

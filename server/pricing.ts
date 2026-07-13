@@ -1,4 +1,5 @@
 import type { TokenTotals } from "../src/types.ts";
+import { CONTEXT_WINDOW } from "./claudeDir.ts";
 
 // ESTIMATION ONLY — Claude Code subscriptions report costUSD: 0, so we derive
 // an indicative cost from public per-million-token API prices. Tweak freely.
@@ -39,6 +40,27 @@ function priceFor(model: string | null | undefined): ModelPrice {
     console.warn(`[pricing] unknown model "${model}" — falling back to Sonnet pricing`);
   }
   return PRICES.sonnet; // default / unknown
+}
+
+/** Context window (tokens) for a model id. A "[1m]" suffix on the id means the
+ *  1M-context beta is enabled, regardless of family. Fable, Opus 4.5+ and
+ *  Sonnet 5+ ship a native 1M window without the suffix (observed >200k
+ *  contexts in real logs for all three). */
+export function contextWindowFor(model: string | null | undefined): number {
+  const m = (model || "").toLowerCase();
+  if (m.includes("[1m]")) return 1_000_000;
+  if (m.includes("fable")) return 1_000_000;
+  // "claude-opus-4-8" → [4, 8]; date suffixes ("-20251001") only ever follow
+  // the version, so the first two numeric segments are the version.
+  const version = (family: string): [number, number] | null => {
+    const match = m.match(new RegExp(`${family}-(\\d+)(?:-(\\d+))?`));
+    return match ? [Number(match[1]), Number(match[2] || 0)] : null;
+  };
+  const opus = version("opus");
+  if (opus && (opus[0] > 4 || (opus[0] === 4 && opus[1] >= 5))) return 1_000_000;
+  const sonnet = version("sonnet");
+  if (sonnet && sonnet[0] >= 5) return 1_000_000;
+  return CONTEXT_WINDOW; // env fallback (default 200k) — also null / pseudo-models
 }
 
 /** Estimate USD cost split per token component for a bundle attributed to a model.

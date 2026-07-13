@@ -58,7 +58,7 @@ export interface SessionMeta {
   // Invariant: sum of the four ≈ estCostUSD (rounding aside).
   costByComponent: TokenTotals;
   peakContextTokens: number;
-  peakContextPct: number; // over CONTEXT_WINDOW
+  peakContextPct: number; // max of per-turn ctx / that turn's model window
   errorCount: number;
   hasErrors: boolean;
   errors: SessionError[]; // last few recorded failures, newest last
@@ -152,7 +152,9 @@ export type ContentBlock =
 export interface ContextPoint {
   t: string; // timestamp
   contextTokens: number; // input + cache_read + cache_create at that turn
-  pct: number;
+  pct: number; // over that turn's model window
+  model: string | null; // null for pseudo-models ("<synthetic>")
+  sidechain?: boolean; // subagent turn — excluded from model-change markers
 }
 
 export interface SubagentRef {
