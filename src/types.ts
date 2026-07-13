@@ -69,6 +69,13 @@ export interface SessionMeta {
   cacheRewriteWastedUSD: number;
   mcpTools: string[];
   subagentCount: number;
+  // Aggregate cost/tokens of ALL subagent transcripts of this session (own cost
+  // of every subagent, summed flat — the dir is flat). Optional: absent on
+  // pre-v13 cache entries and on sessions with no subagents. NOT folded into
+  // estCostUSD/tokens (those stay the session's own cost, to keep the per-skill
+  // / per-model attribution intact). "Cost with subagents" = estCostUSD + this.
+  subagentsCostUSD?: number;
+  subagentsTokens?: TokenTotals;
   firstUserPrompt: string | null; // short preview for the list
   // Per-skill attribution (by attributionSkill on each assistant turn), so the
   // Workflow skill pivot doesn't double-count a session across its skills.
@@ -161,9 +168,49 @@ export interface SubagentRef {
   ref: string; // file id (agent-xxx)
   agentType: string | null;
   description: string | null;
-  toolUseId: string | null;
+  toolUseId: string | null; // the tool_use that spawned this subagent (from .meta.json)
   messageCount: number;
   models: string[];
+  // Own cost/tokens of this subagent's transcript (its turns only).
+  tokens: TokenTotals;
+  estCostUSD: number;
+  // Own cost/tokens PLUS every descendant subagent's, recursively. A subagent
+  // can itself spawn subagents (linked via toolUseId); childRefs are its direct
+  // children. Equal to the own figures when childRefs is empty.
+  costWithChildrenUSD: number;
+  tokensWithChildren: TokenTotals;
+  childRefs: string[];
+  start: string | null;
+  end: string | null;
+  peakContextPct: number; // max per-turn ctx / that turn's model window
+  errorCount: number;
+}
+
+/** Full view of one subagent transcript — the session-like detail. */
+export interface SubagentDetail {
+  sessionId: string; // owning session id
+  ref: string;
+  // The node this subagent was spawned from: another subagent (nested) or null
+  // when it hangs directly off the session. Drives the "back" link.
+  parentRef: string | null;
+  parentAgentType: string | null;
+  agentType: string | null;
+  description: string | null;
+  messages: ThreadMessage[]; // whole transcript (small, not paginated)
+  context: ContextPoint[];
+  tokens: TokenTotals;
+  estCostUSD: number;
+  costWithChildrenUSD: number;
+  tokensWithChildren: TokenTotals;
+  models: string[];
+  start: string | null;
+  end: string | null;
+  peakContextPct: number;
+  errorCount: number;
+  // Every transitive descendant of this subagent, flat (each carries its own
+  // childRefs). Same shape as SessionDetail.subagents, so one recursive panel
+  // renders the tree for a session root and a subagent node alike.
+  subagents: SubagentRef[];
 }
 
 export interface SessionDetail {

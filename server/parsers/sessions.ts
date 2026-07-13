@@ -5,6 +5,7 @@ import {
   projectLabel,
   sessionFilePath,
   subagentsDir,
+  subagentsFingerprint,
   type SessionFile,
 } from "../claudeDir.ts";
 import { contextWindowFor, estimateCost, estimateCostByComponent } from "../pricing.ts";
@@ -28,6 +29,7 @@ import type {
   SessionDetail,
   SessionError,
   SessionMeta,
+  SubagentDetail,
   SubagentRef,
   ThreadMessage,
   TokenTotals,
@@ -68,16 +70,6 @@ function truncate(s: string, n = 160): string {
 const pad = (n: number) => String(n).padStart(2, "0");
 function localYmd(d: Date): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
-
-function countSubagents(projectId: string, id: string): number {
-  try {
-    return fs
-      .readdirSync(subagentsDir(projectId, id))
-      .filter((f) => f.endsWith(".jsonl")).length;
-  } catch {
-    return 0;
-  }
 }
 
 /** Full streaming pass over one session file to build its index row + clean search text. */
@@ -298,6 +290,11 @@ export async function buildMetaAndDocs(file: SessionFile): Promise<{ meta: Sessi
   const branchList = [...branches];
   const ticket = findTicket(file.projectId, ...branchList);
 
+  // Subagent transcripts live in a sibling dir, never in this file — parse them
+  // to aggregate their cost/tokens separately (NOT folded into estCostUSD).
+  const subagentRefs = await listSubagents(file.projectId, file.id);
+  const { subagentsCostUSD, subagentsTokens } = sumSubagents(subagentRefs);
+
   return {
     meta: {
       id: file.id,
@@ -326,7 +323,9 @@ export async function buildMetaAndDocs(file: SessionFile): Promise<{ meta: Sessi
       cacheRewriteCount,
       cacheRewriteWastedUSD,
       mcpTools: [...mcpTools],
-      subagentCount: countSubagents(file.projectId, file.id),
+      subagentCount: subagentRefs.length,
+      subagentsCostUSD,
+      subagentsTokens,
       firstUserPrompt,
       skillTokens,
       skillCost,
@@ -342,8 +341,120 @@ export async function buildMeta(file: SessionFile): Promise<SessionMeta> {
   return (await buildMetaAndDocs(file)).meta;
 }
 
-/** List subagent transcripts of a session (from the subagents/ dir + meta). */
-export function listSubagents(projectId: string, id: string): SubagentRef[] {
+const SUBAGENT_TOOLS = new Set(["Task", "Agent"]);
+
+const sumTokens = (t: TokenTotals) => t.input + t.output + t.cacheRead + t.cacheCreate;
+const addTokens = (dst: TokenTotals, src: TokenTotals) => {
+  dst.input += src.input;
+  dst.output += src.output;
+  dst.cacheRead += src.cacheRead;
+  dst.cacheCreate += src.cacheCreate;
+};
+
+/** Own (self) cost/token figures + renderable turns + context curve of ONE
+ *  transcript. A subagent transcript is structurally a session JSONL, so the
+ *  same per-turn accumulation is reused: usage deduped by requestId, priced
+ *  with each turn's own model. `emittedTaskIds` are the Task/Agent tool_use ids
+ *  this transcript spawned — used to link nested subagents (child.meta.toolUseId
+ *  == one of the parent's emitted ids). */
+interface TranscriptStats {
+  tokens: TokenTotals;
+  estCostUSD: number;
+  models: string[];
+  start: string | null;
+  end: string | null;
+  messageCount: number; // renderable turns
+  errorCount: number;
+  peakContextPct: number;
+}
+interface ParsedTranscript {
+  messages: ThreadMessage[];
+  context: ContextPoint[];
+  stats: TranscriptStats;
+  emittedTaskIds: string[];
+}
+
+async function parseTranscript(filePath: string): Promise<ParsedTranscript> {
+  const messages: ThreadMessage[] = [];
+  const context: ContextPoint[] = [];
+  const toolNames = new Map<string, string>();
+  const seenUsage = new Set<string>();
+  const models = new Set<string>();
+  const emittedTaskIds: string[] = [];
+  const tokens = emptyTokens();
+  let estCostUSD = 0;
+  let start: string | null = null;
+  let end: string | null = null;
+  let errorCount = 0;
+  let peakContextPct = 0;
+
+  for await (const obj of iterateJsonl(filePath)) {
+    const ts: string | undefined = obj.timestamp;
+    if (ts) {
+      if (!start || ts < start) start = ts;
+      if (!end || ts > end) end = ts;
+    }
+    const msg = obj.message;
+    if (obj.type === "assistant" && msg) {
+      recordToolUses(obj, toolNames);
+      if (isRealModel(msg.model)) models.add(msg.model);
+      const key = obj.requestId || msg.id || obj.uuid;
+      if (key && !seenUsage.has(key)) {
+        seenUsage.add(key);
+        const t = tokensFromUsage(msg.usage);
+        addTokens(tokens, t);
+        estCostUSD += estimateCost(msg.model, t);
+        const ctx = contextTokens(msg.usage);
+        if (ctx > 0) {
+          const model = isRealModel(msg.model) ? msg.model : null;
+          const pct = Math.min(100, (ctx / contextWindowFor(model)) * 100);
+          if (pct > peakContextPct) peakContextPct = pct;
+          context.push({ t: ts ?? "", contextTokens: ctx, pct, model });
+        }
+      }
+    }
+    // Task/Agent tool_use ids this transcript spawned (nested subagent linkage).
+    const content = msg?.content;
+    if (Array.isArray(content)) {
+      for (const c of content) {
+        if (c?.type === "tool_use" && c.id && SUBAGENT_TOOLS.has(c.name)) emittedTaskIds.push(c.id);
+      }
+    }
+    if (!RENDERABLE.has(obj.type)) continue;
+    const tm = toThreadMessage(obj, toolNames);
+    if (tm.isError) errorCount++;
+    messages.push(tm);
+  }
+
+  return {
+    messages,
+    context,
+    stats: {
+      tokens,
+      estCostUSD,
+      models: [...models],
+      start,
+      end,
+      messageCount: messages.length,
+      errorCount,
+      peakContextPct,
+    },
+    emittedTaskIds,
+  };
+}
+
+interface SubagentEntry {
+  ref: string;
+  agentType: string | null;
+  description: string | null;
+  toolUseId: string | null;
+  parsed: ParsedTranscript;
+}
+
+/** Parse every subagent transcript of a session (flat dir). readdirSync is
+ *  non-recursive, so a nested `subagents/workflows/*​/journal.jsonl` is never
+ *  picked up — only the session's direct `*.jsonl` transcripts. */
+async function readSubagentEntries(projectId: string, id: string): Promise<SubagentEntry[]> {
   const dir = subagentsDir(projectId, id);
   let files: string[];
   try {
@@ -351,7 +462,7 @@ export function listSubagents(projectId: string, id: string): SubagentRef[] {
   } catch {
     return [];
   }
-  const refs: SubagentRef[] = [];
+  const entries: SubagentEntry[] = [];
   for (const f of files) {
     if (!f.endsWith(".jsonl")) continue;
     const ref = f.replace(/\.jsonl$/, "");
@@ -366,29 +477,105 @@ export function listSubagents(projectId: string, id: string): SubagentRef[] {
     } catch {
       /* meta optional */
     }
-    let messageCount = 0;
-    const models = new Set<string>();
+    let parsed: ParsedTranscript;
     try {
-      const raw = fs.readFileSync(path.join(dir, f), "utf8");
-      for (const line of raw.split("\n")) {
-        if (!line.trim()) continue;
-        messageCount++;
-        try {
-          const model = JSON.parse(line)?.message?.model;
-          if (isRealModel(model)) models.add(model);
-        } catch {
-          /* skip malformed line */
-        }
-      }
+      parsed = await parseTranscript(path.join(dir, f));
     } catch {
-      /* ignore */
+      continue; // unreadable transcript → skip
     }
-    refs.push({ ref, agentType, description, toolUseId, messageCount, models: [...models] });
+    entries.push({ ref, agentType, description, toolUseId, parsed });
   }
-  return refs;
+  return entries;
 }
 
-const SUBAGENT_TOOLS = new Set(["Task", "Agent"]);
+/** Reconstruct the flat entries into a parent→children forest via toolUseId: a
+ *  subagent whose .meta.json.toolUseId is a Task/Agent id EMITTED by another
+ *  transcript is that transcript's child; anything else (id emitted by the main
+ *  session, missing meta, unknown id, orphan) is a root. Returns childRefs per
+ *  ref and a recursive "with descendants" aggregator guarded against cycles. */
+function buildSubagentTree(entries: SubagentEntry[]) {
+  const emitterOf = new Map<string, string>(); // toolUseId → emitting ref
+  for (const e of entries) for (const tid of e.parsed.emittedTaskIds) emitterOf.set(tid, e.ref);
+  const byRef = new Map(entries.map((e) => [e.ref, e]));
+  const childRefs = new Map<string, string[]>();
+  for (const e of entries) childRefs.set(e.ref, []);
+  for (const e of entries) {
+    const parent = e.toolUseId ? emitterOf.get(e.toolUseId) : undefined;
+    if (parent && parent !== e.ref) childRefs.get(parent)!.push(e.ref);
+  }
+  function withDescendants(ref: string, seen: Set<string>): { cost: number; tokens: TokenTotals } {
+    const tokens = emptyTokens();
+    if (seen.has(ref) || !byRef.has(ref)) return { cost: 0, tokens };
+    seen.add(ref);
+    const e = byRef.get(ref)!;
+    let cost = e.parsed.stats.estCostUSD;
+    addTokens(tokens, e.parsed.stats.tokens);
+    for (const c of childRefs.get(ref) ?? []) {
+      const r = withDescendants(c, seen);
+      cost += r.cost;
+      addTokens(tokens, r.tokens);
+    }
+    return { cost, tokens };
+  }
+  return { childRefs, withDescendants };
+}
+
+function toSubagentRef(e: SubagentEntry, childRefs: string[], withChildren: { cost: number; tokens: TokenTotals }): SubagentRef {
+  const s = e.parsed.stats;
+  return {
+    ref: e.ref,
+    agentType: e.agentType,
+    description: e.description,
+    toolUseId: e.toolUseId,
+    messageCount: s.messageCount,
+    models: s.models,
+    tokens: s.tokens,
+    estCostUSD: s.estCostUSD,
+    costWithChildrenUSD: withChildren.cost,
+    tokensWithChildren: withChildren.tokens,
+    childRefs,
+    start: s.start,
+    end: s.end,
+    peakContextPct: s.peakContextPct,
+    errorCount: s.errorCount,
+  };
+}
+
+/** List subagent transcripts of a session with full per-subagent metadata
+ *  (own + with-descendants cost/tokens) and the nesting tree. */
+export async function listSubagents(projectId: string, id: string): Promise<SubagentRef[]> {
+  const entries = await readSubagentEntries(projectId, id);
+  const { childRefs, withDescendants } = buildSubagentTree(entries);
+  return entries.map((e) =>
+    toSubagentRef(e, childRefs.get(e.ref) ?? [], withDescendants(e.ref, new Set())),
+  );
+}
+
+/** Session-level aggregate: own cost/tokens of every subagent, summed flat (the
+ *  dir is flat, so this equals Σ of the roots' with-descendants figures). */
+export function sumSubagents(refs: SubagentRef[]): { subagentsCostUSD: number; subagentsTokens: TokenTotals } {
+  const subagentsTokens = emptyTokens();
+  let subagentsCostUSD = 0;
+  for (const r of refs) {
+    subagentsCostUSD += r.estCostUSD;
+    addTokens(subagentsTokens, r.tokens);
+  }
+  return { subagentsCostUSD, subagentsTokens };
+}
+
+/** Refresh only the subagent aggregate of a cached session meta, reusing every
+ *  own-cost field. Used by the index when the session file is unchanged but a
+ *  subagent transcript changed (fingerprint mismatch) — avoids re-parsing the
+ *  (possibly large) session file just to update the subagent total. */
+export async function reaggregateSubagentMeta(
+  prevMeta: SessionMeta,
+  projectId: string,
+  id: string,
+): Promise<SessionMeta> {
+  const refs = await listSubagents(projectId, id);
+  const { subagentsCostUSD, subagentsTokens } = sumSubagents(refs);
+  return { ...prevMeta, subagentCount: refs.length, subagentsCostUSD, subagentsTokens };
+}
 
 /**
  * Classify a turn beyond its raw role. A `user`-role turn carries tool output
@@ -488,6 +675,7 @@ interface ParsedSession {
   subagents: SubagentRef[];
   size: number;
   mtimeMs: number;
+  subagentsFp: string; // fingerprint of the subagents dir (see subagentsFingerprint)
 }
 
 // LRU of recently-viewed sessions. Bounded so memory stays reasonable; the
@@ -514,8 +702,12 @@ async function getParsedSession(meta: SessionMeta): Promise<ParsedSession> {
     /* file may have vanished; fall through and parse (will yield nothing) */
   }
 
+  // Subagent transcripts live in a sibling dir; their changes don't touch the
+  // session file's stats, so the fingerprint is part of the cache-hit test —
+  // otherwise a growing background subagent would serve frozen cost figures.
+  const subagentsFp = subagentsFingerprint(meta.projectId, meta.id);
   const cached = parsedCache.get(key);
-  if (cached && cached.size === size && cached.mtimeMs === mtimeMs) {
+  if (cached && cached.size === size && cached.mtimeMs === mtimeMs && cached.subagentsFp === subagentsFp) {
     // bump as most-recently-used
     parsedCache.delete(key);
     parsedCache.set(key, cached);
@@ -576,9 +768,10 @@ async function getParsedSession(meta: SessionMeta): Promise<ParsedSession> {
     forks: analysis.forks,
     forkViews,
     context,
-    subagents: listSubagents(meta.projectId, meta.id),
+    subagents: await listSubagents(meta.projectId, meta.id),
     size,
     mtimeMs,
+    subagentsFp,
   };
   parsedCache.set(key, parsed);
   while (parsedCache.size > PARSED_CACHE_MAX) {
@@ -629,19 +822,58 @@ export async function readDetail(
   };
 }
 
-/** Read a subagent transcript fully (they are small). */
-export async function readSubagent(
+/** Read one subagent transcript as a session-like detail: whole thread (small,
+ *  unpaginated) + context curve + own/with-descendants cost + its direct
+ *  children (so the view can recurse). Returns null if the transcript is
+ *  missing. `ref` must already be basename-confined by the caller. */
+export async function readSubagentDetail(
   projectId: string,
   id: string,
   ref: string,
-): Promise<ThreadMessage[]> {
+): Promise<SubagentDetail | null> {
   const file = path.join(subagentsDir(projectId, id), `${ref}.jsonl`);
-  const out: ThreadMessage[] = [];
-  const toolNames = new Map<string, string>();
-  for await (const obj of iterateJsonl(file)) {
-    if (obj.type === "assistant") recordToolUses(obj, toolNames);
-    if (!RENDERABLE.has(obj.type)) continue;
-    out.push(toThreadMessage(obj, toolNames));
+  if (!fs.existsSync(file)) return null;
+  const parsed = await parseTranscript(file);
+  // The tree (childRefs + with-descendants figures) needs every sibling, so
+  // reuse listSubagents for the metadata and this ref's own parse for the thread.
+  const refs = await listSubagents(projectId, id);
+  const self = refs.find((r) => r.ref === ref);
+  const parent = refs.find((r) => r.childRefs.includes(ref)) ?? null;
+  const s = parsed.stats;
+  // All transitive descendants, flat — so the same recursive panel that renders
+  // a session's whole tree renders this subagent's subtree. Guarded against
+  // cyclic toolUseId data.
+  const byRef = new Map(refs.map((r) => [r.ref, r]));
+  const descendants: SubagentRef[] = [];
+  const seen = new Set<string>();
+  const stack = [...(self?.childRefs ?? [])];
+  while (stack.length) {
+    const r = stack.pop()!;
+    if (seen.has(r)) continue;
+    seen.add(r);
+    const node = byRef.get(r);
+    if (!node) continue;
+    descendants.push(node);
+    stack.push(...node.childRefs);
   }
-  return out;
+  return {
+    sessionId: id,
+    ref,
+    parentRef: parent?.ref ?? null,
+    parentAgentType: parent?.agentType ?? null,
+    agentType: self?.agentType ?? null,
+    description: self?.description ?? null,
+    messages: parsed.messages,
+    context: parsed.context,
+    tokens: s.tokens,
+    estCostUSD: s.estCostUSD,
+    costWithChildrenUSD: self?.costWithChildrenUSD ?? s.estCostUSD,
+    tokensWithChildren: self?.tokensWithChildren ?? s.tokens,
+    models: s.models,
+    start: s.start,
+    end: s.end,
+    peakContextPct: s.peakContextPct,
+    errorCount: s.errorCount,
+    subagents: descendants,
+  };
 }

@@ -1,19 +1,20 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { listSessionFiles } from "./claudeDir.ts";
-import { buildMetaAndDocs } from "./parsers/sessions.ts";
+import { listSessionFiles, subagentsFingerprint } from "./claudeDir.ts";
+import { buildMetaAndDocs, reaggregateSubagentMeta } from "./parsers/sessions.ts";
 import { initSearchIndex, commitIndexVersion, upsertDocs, pruneDocs, beginBatch, endBatch } from "./parsers/searchIndex.ts";
 import type { SessionMeta } from "../src/types.ts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CACHE_DIR = path.join(__dirname, "..", ".cache");
 const CACHE_FILE = path.join(CACHE_DIR, "index.json");
-const CACHE_VERSION = 12; // 12: 1M window for Opus 4.5+ / Sonnet 5+
+const CACHE_VERSION = 13; // 13: per-session subagent cost/token aggregate
 
 interface CacheEntry {
   size: number;
   mtimeMs: number;
+  subagentsFp: string; // fingerprint of the subagents dir (invalidates the aggregate)
   meta: SessionMeta;
 }
 interface CacheShape {
@@ -56,14 +57,25 @@ export async function getIndex(): Promise<SessionMeta[]> {
   for (const f of files) {
     const key = `${f.projectId}/${f.id}`;
     const prev = cache.entries[key];
+    const subagentsFp = subagentsFingerprint(f.projectId, f.id);
     if (!fresh && prev && prev.size === f.size && prev.mtimeMs === f.mtimeMs) {
-      next.entries[key] = prev;
-      metas.push(prev.meta);
+      if (prev.subagentsFp === subagentsFp) {
+        next.entries[key] = prev;
+        metas.push(prev.meta);
+        continue;
+      }
+      // Session file unchanged but a subagent transcript changed: re-aggregate
+      // only the subagent part, reuse the rest of the cached meta. Search docs
+      // come from the session file (unchanged), so the FTS index is left as-is.
+      const meta = await reaggregateSubagentMeta(prev.meta, f.projectId, f.id);
+      next.entries[key] = { size: f.size, mtimeMs: f.mtimeMs, subagentsFp, meta };
+      metas.push(meta);
+      reparsed++;
       continue;
     }
     const { meta, searchDocs } = await buildMetaAndDocs(f);
     try { upsertDocs(f.id, f.projectId, searchDocs); } catch (e) { console.warn("[search] upsert failed:", e); }
-    next.entries[key] = { size: f.size, mtimeMs: f.mtimeMs, meta };
+    next.entries[key] = { size: f.size, mtimeMs: f.mtimeMs, subagentsFp, meta };
     metas.push(meta);
     reparsed++;
   }

@@ -73,6 +73,35 @@ export function subagentsDir(projectId: string, id: string): string {
 }
 
 /**
+ * Stat-only fingerprint of a session's subagents dir (Σ per-transcript
+ * size + mtime over the direct `*.jsonl` children). Cheap (readdir + statSync,
+ * no content read). Changes whenever a transcript is added, removed or grows —
+ * so cost/token aggregates keyed on it aren't served stale when a background
+ * subagent finishes after the parent session file's last write. "" when there
+ * is no subagents dir.
+ */
+export function subagentsFingerprint(projectId: string, id: string): string {
+  const dir = subagentsDir(projectId, id);
+  let names: string[];
+  try {
+    names = fs.readdirSync(dir);
+  } catch {
+    return "";
+  }
+  const parts: string[] = [];
+  for (const name of names.sort()) {
+    if (!name.endsWith(".jsonl")) continue;
+    try {
+      const s = fs.statSync(path.join(dir, name));
+      parts.push(`${name}:${s.size}:${s.mtimeMs}`);
+    } catch {
+      /* vanished between readdir and stat */
+    }
+  }
+  return parts.join("|");
+}
+
+/**
  * Best-effort decode of the encoded project dir name into a readable path.
  * Encoding replaces "/" with "-", which collides with real hyphens, so this
  * is only a fallback — prefer the cwd captured inside the session file.

@@ -669,6 +669,20 @@ a.dash-bar-row, a.dash-donut-row { padding: 2px 4px; margin-left: -4px; margin-r
 }
 .card:hover { box-shadow: var(--shadow-md); border-color: var(--muted); }
 
+/* One boxed, clickable subagent entry: a title + a minimal key/value table. */
+.subagent-item {
+  display: block;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 12px;
+  margin-bottom: 8px;
+  text-decoration: none;
+  color: var(--text);
+}
+.subagent-item:hover { border-color: var(--accent); text-decoration: none; }
+.subagent-item-title { font-weight: 700; margin-bottom: 2px; }
+
 /* Typography scale */
 .text-display { font-size: 40px; line-height: 1.05; font-weight: 750; letter-spacing: -0.04em; }
 .text-title   { font-size: 28px; line-height: 1.15; font-weight: 720; letter-spacing: -0.03em; }

@@ -4,7 +4,7 @@ import fs from "node:fs";
 import { execFile } from "node:child_process";
 import path from "node:path";
 import { getIndex } from "../cache.ts";
-import { readDetail, readSubagent } from "../parsers/sessions.ts";
+import { readDetail, readSubagentDetail } from "../parsers/sessions.ts";
 import { listMemories } from "../parsers/memory.ts";
 import { listPlans, resolvePlanPath, resolveProjectPath } from "../parsers/plans.ts";
 import { listHooks } from "../parsers/hooks.ts";
@@ -215,8 +215,14 @@ api.get("/sessions/:id", async (req, res) => {
 api.get("/sessions/:id/subagents/:ref", async (req, res) => {
   const meta = await findMeta(req.params.id);
   if (!meta) return res.status(404).json({ error: "session not found" });
-  const messages = await readSubagent(meta.projectId, meta.id, req.params.ref);
-  res.json({ messages });
+  // Confine ref to a basename within the session's subagents dir (AGENTS.md).
+  const ref = req.params.ref;
+  if (/[/\\]/.test(ref) || ref.includes("..")) {
+    return res.status(400).json({ error: "invalid ref" });
+  }
+  const detail = await readSubagentDetail(meta.projectId, meta.id, ref);
+  if (!detail) return res.status(404).json({ error: "subagent not found" });
+  res.json(detail);
 });
 
 api.get("/bilans", (_req, res) => {
