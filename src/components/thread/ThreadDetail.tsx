@@ -15,6 +15,7 @@ import { useT } from "../../hooks/useT";
 import { Message } from "../message";
 import { Minimap } from "../Minimap";
 import { ContextChart } from "../ContextChart";
+import { CostBreakdownChart } from "../CostBreakdownChart";
 import { SubagentsPanel } from "./SubagentsPanel";
 import { Pager } from "../ui/Pager";
 import { Panel } from "../ui/Panel";
@@ -34,6 +35,11 @@ export interface ThreadDetailProps {
 
   estCostUSD: number;
   tokens: TokenTotals;
+  // USD per token component (own cost only) — feeds the cost-breakdown donut.
+  costByComponent: TokenTotals;
+  // Estimated avoidable surcost from cache rewrites, own cost only — subset of
+  // costByComponent.cacheCreate.
+  cacheRewriteWastedUSD: number;
   // Cost including descendants. Rendered as a second line when it exceeds the
   // own cost (i.e. the node has subagents).
   withSubagentsCostUSD?: number;
@@ -141,6 +147,11 @@ export function ThreadDetail(p: ThreadDetailProps) {
               <span className="v cost">{fmtCost(p.withSubagentsCostUSD!)}</span>
             </div>
           )}
+          <CostBreakdownChart
+            costByComponent={p.costByComponent}
+            cacheRewriteWastedUSD={p.cacheRewriteWastedUSD}
+            subagentsCostUSD={hasWithSub ? p.withSubagentsCostUSD! - p.estCostUSD : 0}
+          />
           <div className="kv">
             <span className="k">{t("detail_token_input")}</span>
             <span className="v">{fmtTokens(p.tokens.input)}</span>

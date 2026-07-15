@@ -124,6 +124,8 @@ export default function SessionDetail() {
       subagents={data.subagents}
       estCostUSD={m.estCostUSD}
       tokens={m.tokens}
+      costByComponent={m.costByComponent}
+      cacheRewriteWastedUSD={m.cacheRewriteWastedUSD}
       withSubagentsCostUSD={m.subagentsCostUSD ? m.estCostUSD + m.subagentsCostUSD : undefined}
       models={m.models}
       start={m.start}
