@@ -28,6 +28,10 @@ Complements `ccusage` (CLI costs) and `awa:skill-stats`: here you **explore and 
 | --- | --- |
 | **Workflow** — cost pivoted by skill / ticket / branch.<br>![Workflow](docs/screenshots/workflow.png) | **Timeline** — sessions as time-positioned bars, colored by model.<br>![Timeline](docs/screenshots/timeline.png) |
 
+**Agents** — registry of every subagent type seen in your history, joined with its on-disk definition (builtin / custom / plugin) and usage stats.
+
+![Agents](docs/screenshots/agents.png)
+
 ## Getting started
 
 ```bash
