@@ -9,7 +9,7 @@ import type { SessionMeta } from "../src/types.ts";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CACHE_DIR = path.join(__dirname, "..", ".cache");
 const CACHE_FILE = path.join(CACHE_DIR, "index.json");
-const CACHE_VERSION = 13; // 13: per-session subagent cost/token aggregate
+const CACHE_VERSION = 14; // 14: subagent cost/token aggregate ventilated per agentType
 
 interface CacheEntry {
   size: number;

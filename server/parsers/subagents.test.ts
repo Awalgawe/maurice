@@ -224,6 +224,26 @@ describe("listSubagents", () => {
     expect(viaRoots).toBeCloseTo(flat, 12);
   });
 
+  it("ventilates the aggregate per agentType, grouping missing agentType under \"(unknown)\"", async () => {
+    const refs = await listSubagents(PROJECT, SESSION);
+    const { subagentsByType, subagentsCostUSD } = sumSubagents(refs);
+    // agent-real + agent-parent + agent-child + agent-root are all "Explore"
+    // or "general-purpose" per their .meta.json; agent-orphan/agent-interrupted
+    // have no .meta.json (Explore is agent-real's type, general-purpose is
+    // agent-parent's) → grouped under "(unknown)".
+    const explore = refs.filter((r) => r.agentType === "Explore");
+    expect(subagentsByType.Explore.count).toBe(explore.length);
+    expect(subagentsByType.Explore.costUSD).toBeCloseTo(
+      explore.reduce((a, r) => a + r.estCostUSD, 0),
+      12,
+    );
+    const unknown = refs.filter((r) => r.agentType === null);
+    expect(subagentsByType["(unknown)"].count).toBe(unknown.length);
+    // every bucket's cost sums back to the flat total (no double counting).
+    const bucketTotal = Object.values(subagentsByType).reduce((a, b) => a + b.costUSD, 0);
+    expect(bucketTotal).toBeCloseTo(subagentsCostUSD, 12);
+  });
+
   it("fingerprint changes when a transcript grows (invalidates the cached aggregate)", () => {
     const file = path.join(dir, "projects", PROJECT, SESSION, "subagents", "agent-child.jsonl");
     const original = fs.readFileSync(file);
@@ -309,5 +329,8 @@ describe("reaggregateSubagentMeta", () => {
     expect(meta.subagentCount).toBe(3);
     expect(meta.subagentsCostUSD).toBeCloseTo(((10 + 20 + 30) * 5) / 1_000_000, 12);
     expect(meta.subagentsTokens!.output).toBe(60);
+    // deepAgents: agent-x is general-purpose, agent-y/agent-z are Explore.
+    expect(meta.subagentsByType!["general-purpose"].count).toBe(1);
+    expect(meta.subagentsByType!.Explore.count).toBe(2);
   });
 });

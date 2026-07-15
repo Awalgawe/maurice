@@ -8,6 +8,7 @@ import { readDetail, readSubagentDetail } from "../parsers/sessions.ts";
 import { listMemories } from "../parsers/memory.ts";
 import { listPlans, resolvePlanPath, resolveProjectPath } from "../parsers/plans.ts";
 import { listHooks } from "../parsers/hooks.ts";
+import { buildAgentRows } from "../parsers/agents.ts";
 import { getActiveSession } from "../parsers/active.ts";
 import { listBilans, readBilan } from "../parsers/bilans.ts";
 import { sessionFilePath, PROJECTS_DIR } from "../claudeDir.ts";
@@ -76,6 +77,10 @@ api.get("/plans", async (_req, res) => {
 
 api.get("/hooks", async (_req, res) => {
   res.json(await listHooks());
+});
+
+api.get("/agents", async (_req, res) => {
+  res.json({ agents: buildAgentRows(await getIndex()) });
 });
 
 // Self-documentation for the MCP server. The tool list is pulled from the SAME

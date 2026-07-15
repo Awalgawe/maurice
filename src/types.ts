@@ -76,6 +76,10 @@ export interface SessionMeta {
   // / per-model attribution intact). "Cost with subagents" = estCostUSD + this.
   subagentsCostUSD?: number;
   subagentsTokens?: TokenTotals;
+  // Same aggregate, ventilated per agentType (own cost of every subagent of
+  // that type, summed flat — same no-double-counting convention as above).
+  // Optional for the same reason: absent on pre-v14 cache entries.
+  subagentsByType?: Record<string, { count: number; costUSD: number; tokens: TokenTotals }>;
   firstUserPrompt: string | null; // short preview for the list
   // Per-skill attribution (by attributionSkill on each assistant turn), so the
   // Workflow skill pivot doesn't double-count a session across its skills.
@@ -338,4 +342,43 @@ export interface McpToolDoc {
 export interface McpInfo {
   port: number;
   tools: McpToolDoc[];
+}
+
+export type AgentSource = "user" | "project" | "plugin";
+// No field in a subagent's .meta.json marks its origin — "builtin" is inferred
+// from a hardcoded snapshot of Claude Code's shipped agentType values, so it
+// drifts across Claude Code versions. See classifyAgentType.
+export type AgentOrigin = "builtin" | "custom" | "plugin" | "unknown";
+
+/** One agent definition found on disk (a parsed `.claude/agents/*.md`). */
+export interface AgentDefinition {
+  name: string; // plugin agents are namespaced "plugin:name", matching agentType
+  description: string;
+  model: string | null;
+  color: string | null;
+  tools: string[] | null; // null = no `tools:` key (agent can use every tool)
+  source: AgentSource;
+  filePath: string;
+  projectId: string | null; // only set for source === "project"
+  projectLabel: string | null;
+}
+
+/** Usage aggregate for one agentType across every session that ran it. */
+export interface AgentUsage {
+  runs: number; // subagent transcripts of this agentType
+  sessions: number; // distinct sessions that ran ≥1
+  costUSD: number;
+  tokens: TokenTotals;
+  lastUsed: string | null; // `end` of the most recent session that ran this agentType
+}
+
+/** One row of the /agents view: registry definition(s) and/or usage, joined by
+ *  name — either side may be absent (an orphan: defined-never-used, or
+ *  used-without-a-definition, e.g. a project whose .claude/agents no longer
+ *  exists on disk). */
+export interface AgentRow {
+  name: string;
+  origin: AgentOrigin;
+  definitions: AgentDefinition[]; // every registry entry matching this name (possibly >1 across projects)
+  usage: AgentUsage | null;
 }

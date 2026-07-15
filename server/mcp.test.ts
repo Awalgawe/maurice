@@ -19,6 +19,7 @@ describe("createMcpServer", () => {
     const { tools } = await client.listTools();
     const names = tools.map((t) => t.name).sort();
     expect(names).toEqual([
+      "agents",
       "cost_summary",
       "filters",
       "get_session",

@@ -27,6 +27,7 @@ export function Topbar() {
         <NavLink to="/memories">Memories</NavLink>
         <NavLink to="/plans">Plans</NavLink>
         <NavLink to="/hooks">Hooks</NavLink>
+        <NavLink to="/agents">Agents</NavLink>
         <NavLink to="/mcp">MCP</NavLink>
         <NavLink to="/bilans">Bilans</NavLink>
       </nav>
