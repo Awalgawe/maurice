@@ -23,17 +23,19 @@ You capture and refresh the README documentation screenshots for Maurice, stored
 
 ## Constants
 
-- **Theme**: "Maurice Nuit" (`maurice-dark`). Set via `localStorage['claude-sessions:theme'] = 'maurice-dark'` and the `data-theme` attribute on `<html>`, then reload so React picks it up. One consistent theme across the whole gallery.
+- **Theme**: "Maurice Nuit" (`maurice-dark`). **First read and note the current value** (`evaluate_script` returning `localStorage.getItem('claude-sessions:theme')`) so you can restore it later — you're mutating the user's own browser state. Then set via `localStorage['claude-sessions:theme'] = 'maurice-dark'` and the `data-theme` attribute on `<html>`, then reload so React picks it up. One consistent theme across the whole gallery. Keep the noted prior value in your context — page JS (a `window.*` global) does **not** survive the reload, so you can't stash it in the page.
 - **Viewport**: 1920×1080 (16:9).
+- **Routes**: Dashboard is `/` (there is **no** `/dashboard` route — navigating there renders a blank page and any load-gate times out). Others: `/sessions`, `/sessions/:id` (session detail), `/workflow`, `/timeline`, `/agents`.
+- **Page-load gate**: don't gate on `wait_for(["Cost","Coût"])` — that text is absent on some pages (Dashboard, Timeline) and the wait just times out after 30 s. Poll for something page-specific with `evaluate_script` (e.g. a table/`.tl-*`/`.dash-*` element present), or `wait_for` a string you've confirmed is on *that* page.
 
 ## Process, per page
 
-1. Capture the page **unblurred** first, to a scratch location (not `docs/screenshots/`), to see what's actually confidential.
+1. Capture the page **unblurred** first, to a scratch location (not `docs/screenshots/`), to see what's actually confidential. The scratch path **must be inside the repo working tree** — use `./.scratch-screenshots/` (relative to the repo cwd). `chrome-devtools`'s `take_screenshot` only writes within its configured workspace roots, so the session `/tmp` scratchpad is rejected with "Access denied … not within workspace roots". Delete the scratch files (and the dir) at the end.
 2. Inspect the DOM to find CSS selectors for the confidential elements (project/skill/ticket/branch names, message content, filesystem paths). Prefer targeting by class, not by structural position (`nth-child` leaks onto unrelated columns when page structure differs — hit this once on the Workflow page).
 3. Inject `filter: blur(7-8px)` via `evaluate_script`, scoped to only those selectors. Keep everything else sharp: numbers, charts, model names, cost figures, column headers, structure. The goal is a page that still demos the feature, not a wall of noise.
 4. Capture, then **read the resulting image back and visually check it for leaks** before keeping it.
 5. Save to `docs/screenshots/<page>.png` and delete the temporary unblurred captures.
-6. Flip the app's theme back afterwards (or tell the user it's left on `maurice-dark` in their browser's localStorage) — it's mutated as a side effect of capturing.
+6. Restore the app's theme afterwards to the value you noted before setting it (see the **Theme** constant): `localStorage.setItem('claude-sessions:theme', <prior value>)`, or `localStorage.removeItem('claude-sessions:theme')` if there was none, then reload. Only if you never captured a prior value (e.g. the read failed), fall back to telling the user it's left on `maurice-dark` — don't silently `removeItem` when you didn't confirm the key was absent.
 
 ## Known confidential elements, per page
 
@@ -61,6 +63,8 @@ All pages: the topbar's live-session indicator (`.live-project`) opportunistical
 - When two sibling elements share the same class (e.g. Agents' two `.muted` divs — the definition description and the source/path line) and there's no other hook, disambiguate with an attribute selector on the inline style React emits (`[style*="font-size: 12"]` vs `[style*="font-size: 11"]`) rather than structural position, which is fragile across rows with a different number of definitions.
 - Some confidential strings only show up inside free-text (an agent/skill description naming the employer's domain, a tool-error excerpt with a full path) rather than in a clean column. CSS alone can't pattern-match text content — use `evaluate_script` to scan `textContent` for the telltale string (company domain, `wmp-\d+`, `/Users/<name>/`) and blur only the specific matching element directly (`el.style.filter = 'blur(8px)'`), instead of blanket-blurring every sibling of that shape and losing the page's demo value.
 - Session detail's topbar can show the live-session indicator (see `.live-project` note above) mid-capture even when it wasn't there moments earlier on the same URL — it's a polling artifact, not a page-specific thing. Don't assume a page is clean just because an earlier capture of it didn't show the indicator.
+- On big-table pages (Sessions especially, 175+ rows), `take_snapshot` — and `wait_for`, which returns a snapshot — blows past the tool's token limit (~145k chars) and fails. Skip the full snapshot: derive selectors and pick a target row with a scoped `evaluate_script` (query `tbody tr`, read the cells you need) instead.
+- No image tooling beyond `sips`: Python `PIL`/`Pillow` and ImageMagick (`magick`/`convert`) are **not** installed. Don't reach for them to crop/inspect — capture the viewport you actually want (per the note above, session-detail at scroll 0 already frames the panel) or use `sips` for a resize/crop. Avoid `take_screenshot` with a `uid` from a stale snapshot — the uid is invalidated on navigation ("Element uid not found").
 
 ## Maintaining this file
 
