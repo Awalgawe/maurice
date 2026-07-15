@@ -627,6 +627,17 @@ tr.day-row td { background: var(--panel); color: var(--muted); font-size: 12px; 
 .dash-bar-row .dash-bar-track { flex: 1; height: 6px; background: var(--panel-2); border-radius: 3px; overflow: hidden; }
 .dash-bar-row .dash-bar-fill { height: 100%; background: var(--accent); border-radius: 3px; }
 .dash-bar-row .dash-bar-val { min-width: 74px; white-space: nowrap; text-align: right; color: var(--text); font-variant-numeric: tabular-nums; }
+.dash-stack-bar { display: flex; height: 14px; border-radius: 4px; border: 1px solid var(--border); background: var(--panel-2); }
+.dash-stack-seg { position: relative; height: 100%; }
+.dash-stack-seg:first-child { border-radius: 3px 0 0 3px; }
+.dash-stack-seg:last-child { border-radius: 0 3px 3px 0; }
+.dash-stack-tip {
+  position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%);
+  background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px;
+  padding: 3px 8px; font-size: 12px; color: var(--text); white-space: nowrap;
+  opacity: 0; pointer-events: none; transition: opacity .1s; z-index: 5;
+}
+.dash-stack-seg:hover .dash-stack-tip { opacity: 1; }
 .dash-donut-legend { display: flex; flex-direction: column; gap: 5px; margin-top: 10px; }
 .dash-donut-row { display: flex; align-items: center; gap: 8px; font-size: 12px; }
 .dash-donut-swatch { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }

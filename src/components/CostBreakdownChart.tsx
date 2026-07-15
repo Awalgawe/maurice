@@ -1,17 +1,8 @@
-import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 import type { TokenTotals } from "../types";
 import { useFmt } from "../hooks/useFmt";
 import { useT } from "../hooks/useT";
 
-const tooltipStyle = {
-  background: "var(--panel-2)",
-  border: "1px solid var(--border)",
-  borderRadius: 6,
-  fontSize: 12,
-  color: "var(--text)",
-};
-
-/** At-a-glance donut of where a node's (session or subagent) estimated cost
+/** At-a-glance stacked bar of where a node's (session or subagent) estimated cost
  *  actually goes: input/output/cache-read/cache-write, cache-write split into
  *  its avoidable-rewrite waste vs. the rest, and the node's own subagents'
  *  share. Caller wraps it in a Panel — used inside "Cost & tokens" for both
@@ -44,27 +35,13 @@ export function CostBreakdownChart({
 
   return (
     <>
-      <ResponsiveContainer width="100%" height={140}>
-        <PieChart>
-          <Pie
-            data={slices}
-            dataKey="value"
-            nameKey="label"
-            cx="50%"
-            cy="50%"
-            innerRadius={36}
-            outerRadius={60}
-            stroke="var(--border)"
-            strokeWidth={2}
-            isAnimationActive={false}
-          >
-            {slices.map((s) => (
-              <Cell key={s.key} fill={s.color} />
-            ))}
-          </Pie>
-          <Tooltip contentStyle={tooltipStyle} formatter={(v: number, name: string) => [fmtCost(v), name]} />
-        </PieChart>
-      </ResponsiveContainer>
+      <div className="dash-stack-bar">
+        {slices.map((s) => (
+          <div key={s.key} className="dash-stack-seg" style={{ flexGrow: s.value, background: s.color }}>
+            <span className="dash-stack-tip">{s.label}: {fmtCost(s.value)}</span>
+          </div>
+        ))}
+      </div>
       <div className="dash-donut-legend">
         {slices.map((s) => (
           <div className="dash-donut-row" key={s.key}>
