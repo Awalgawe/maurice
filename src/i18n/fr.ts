@@ -106,6 +106,7 @@ export const fr = {
   detail_cost_with_sub: "Avec sous-agents",
   detail_cost_chart_wasted: "Cache write (gâché)",
   detail_cost_chart_subagents: "Sous-agents",
+  detail_cost_chart_total_with_sub: "Total avec sous-agents",
   detail_subagent_messages: "Messages",
   detail_subagent_self_cost: "Coût propre",
   detail_subagents_total: "Total sous-agents",

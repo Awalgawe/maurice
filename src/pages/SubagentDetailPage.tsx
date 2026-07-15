@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import type { SubagentDetail } from "../types";
 import { getSubagent } from "../api";
-import { modelLabel } from "../format";
+import { modelLabel, subtractTokens } from "../format";
 import { useT } from "../hooks/useT";
 import { ThreadDetail } from "../components/thread/ThreadDetail";
 import { Chip } from "../components/ui/Chip";
@@ -49,7 +49,9 @@ export default function SubagentDetailPage() {
       tokens={data.tokens}
       costByComponent={data.costByComponent}
       cacheRewriteWastedUSD={data.cacheRewriteWastedUSD}
+      cacheRewriteWastedTokens={data.cacheRewriteWastedTokens}
       withSubagentsCostUSD={data.costWithChildrenUSD}
+      subagentsTokens={subtractTokens(data.tokensWithChildren, data.tokens)}
       models={data.models}
       start={data.start}
       end={data.end}
