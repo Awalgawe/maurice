@@ -41,20 +41,26 @@ Re-verify selectors each time — they can drift as the UI changes.
 
 | Page | Blur | Keep sharp |
 |---|---|---|
-| Dashboard | `.dash-bar-label` (project/skill names), `.dash-toplist-name` (expensive sessions), `.dash-mcp-list` (MCP tool chips) | KPIs, charts, amounts |
-| Sessions | Project/prompt, Ticket, Branch, Skills columns | Model, Date, Msgs, Tokens, Cost, Waste~, Ctx, Err, Sub |
-| Session detail | `.detail-thread .body` (message bodies), the `<h2>` header (leaks full filesystem path incl. username) | Role headers, right-rail panels (Cost & tokens incl. cost breakdown donut, Context window curve) |
-| Workflow | First column (skill/ticket/branch group labels) | Aggregates (cost/tokens/errors), Group-by selector |
+| Dashboard | `.dash-bar-label` (project/skill names), `.dash-toplist-name` (expensive sessions), `.dash-mcp-list` (MCP tool chips), `.dash-err-excerpt` (latest-errors message text — can contain full filesystem paths incl. username) | KPIs, charts, amounts, `.dash-err-tool`/`.dash-err-ago` (tool name, time) |
+| Sessions | Project/prompt, Ticket, Branch, Skills columns (`tbody tr:not(.day-row) td:nth-child(1..4)`, no dedicated classes on these cells) | Model, Date, Msgs, Tokens, Cost, Waste~, Ctx, Err, Sub |
+| Session detail | `.detail-thread .body` (message bodies), the `<h2>` header (leaks full filesystem path incl. username), `.detail-header div.muted` (branch chips row under the header), `.subagent-item .muted` (subagent task description) | Role headers, right-rail panels (Cost & tokens incl. cost breakdown donut and "With subagents"/"Sub-agents" cost row, Context window curve incl. dashed model-switch markers), `.subagent-item-title` (agent type name), MCP tools list |
+| Workflow | First column (skill/ticket/branch group labels, `table tbody tr td:nth-child(1)`, no dedicated class) | Aggregates (cost/tokens/errors), Group-by selector |
 | Timeline | `.tl-lane-name` (ticket/branch/project lane labels) | Count·cost line, bars by model, legend, axis |
+| Agents | `td > div.muted[style*="font-size: 11"] > span:first-child` (source + project-scope label) and `> code` (on-disk file path, leaks username/project/ticket) per definition line; any definition **description** (`td > div.muted[style*="font-size: 12"]`) that names the employer/company domain (find via JS text-content scan, e.g. `/webedia/i`, and blur that specific element directly — not a blanket rule) | Agent name, origin badge (builtin/custom/plugin/unknown), "Never used"/"No definition found" chips, Runs/Sessions/Cost/Last used columns, most definition descriptions (generic tool documentation, not confidential) |
 
 The MCP docs page is the public API surface — nothing to blur there (it was dropped from the README gallery in the 0.2.0 refresh since the live tool list already documents it better than a screenshot).
+
+All pages: the topbar's live-session indicator (`.live-project`) opportunistically shows the current project name when a session has been active in the last few minutes — it's time-dependent (present on one capture, absent moments later on the same page). Always add `.live-project { filter: blur(8px) !important; }` defensively, whether or not it's visible when you inspect the DOM.
 
 ## Gotchas learned the hard way
 
 - A reload to apply the theme wipes any CSS already injected — re-inject blur *after* the theme is set, not before.
 - Structural selectors (`nth-child`) don't transfer between pages with different table shapes; re-derive selectors per page.
 - Blur radius needs to survive full-resolution viewing — 7-8px, not the CSS default.
-- Full-page capture for content-heavy pages (Dashboard) vs. viewport-only for tall tables (Sessions, 175+ rows) — pick whichever keeps the PNG a reasonable size and the crop meaningful for a README.
+- Full-page capture for content-heavy pages (Dashboard, Agents) vs. viewport-only for tall tables (Sessions, 175+ rows) or long threads (Session detail, 200+ messages) — pick whichever keeps the PNG a reasonable size and the crop meaningful for a README. For Session detail specifically, scroll position 0 (top of thread) already fits the donut chart, full cost breakdown (incl. subagents cost row) and the full context-window curve in one 1080px viewport — no need to scroll further or go full-page.
+- When two sibling elements share the same class (e.g. Agents' two `.muted` divs — the definition description and the source/path line) and there's no other hook, disambiguate with an attribute selector on the inline style React emits (`[style*="font-size: 12"]` vs `[style*="font-size: 11"]`) rather than structural position, which is fragile across rows with a different number of definitions.
+- Some confidential strings only show up inside free-text (an agent/skill description naming the employer's domain, a tool-error excerpt with a full path) rather than in a clean column. CSS alone can't pattern-match text content — use `evaluate_script` to scan `textContent` for the telltale string (company domain, `wmp-\d+`, `/Users/<name>/`) and blur only the specific matching element directly (`el.style.filter = 'blur(8px)'`), instead of blanket-blurring every sibling of that shape and losing the page's demo value.
+- Session detail's topbar can show the live-session indicator (see `.live-project` note above) mid-capture even when it wasn't there moments earlier on the same URL — it's a polling artifact, not a page-specific thing. Don't assume a page is clean just because an earlier capture of it didn't show the indicator.
 
 ## Maintaining this file
 
