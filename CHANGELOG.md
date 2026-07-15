@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented in this file. Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/).
 
+## [0.3.0] - 2026-07-15
+
+### Added
+
+- **Agents page** — a `/agents` view joining every `agentType` seen in subagent transcripts with its on-disk definition (`~/.claude/agents`, a project's `.claude/agents`, or an installed plugin), inferring an origin (builtin/custom/plugin/unknown). Same data exposed via `GET /api/agents` and a new MCP `agents` tool.
+- **Per-subagent cost** — subagent cost/tokens, previously invisible, are now computed per transcript (own and with descendants) and aggregated onto the session without folding into its own cost. Sessions and subagents now render through one unified, agnostic detail view, with a subagents panel and drill-down navigation.
+- **Cost breakdown donut** — the shared "Cost & tokens" panel (session or subagent) gets a small pie chart splitting estimated cost into input, output, cache read, cache write (regular vs. wasted-by-rewrite), and subagents' share.
+- **Per-model context window** — context fill % is now computed against each turn's own model window instead of a single global `CONTEXT_WINDOW`, correctly reflecting 1M-window models (Fable, Opus 4.5+, Sonnet 5+). The session chart marks main-thread model switches with dashed vertical lines.
+
+### Changed
+
+- **Topbar config overlay** — the theme, language, and editor selectors are consolidated behind a single icon button that opens a config overlay, decluttering the topbar.
+
 ## [0.2.0] - 2026-07-09
 
 ### Added

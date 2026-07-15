@@ -1,7 +1,7 @@
 {
   "name": "maurice",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "license": "MIT",
   "description": "Local read-only explorer for ~/.claude conversation logs (sessions, cost, context window, workflow by skill/ticket/branch)",
