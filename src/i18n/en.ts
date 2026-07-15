@@ -102,6 +102,7 @@ export const en: Record<I18nKey, string> = {
   detail_cost_with_sub: "With subagents",
   detail_cost_chart_wasted: "Cache write (wasted)",
   detail_cost_chart_subagents: "Sub-agents",
+  detail_cost_chart_total_with_sub: "Total with subagents",
   detail_subagent_messages: "Messages",
   detail_subagent_self_cost: "Own cost",
   detail_subagents_total: "Subagents total",

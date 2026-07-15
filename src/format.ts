@@ -74,6 +74,20 @@ export function totalTokens(t: {
   return t.input + t.output + t.cacheRead + t.cacheCreate;
 }
 
+/** Component-wise a − b, floored at 0 (children totals shouldn't go negative,
+ *  but rounding/ordering across separately-parsed transcripts could). */
+export function subtractTokens(
+  a: { input: number; output: number; cacheRead: number; cacheCreate: number },
+  b: { input: number; output: number; cacheRead: number; cacheCreate: number },
+): { input: number; output: number; cacheRead: number; cacheCreate: number } {
+  return {
+    input: Math.max(0, a.input - b.input),
+    output: Math.max(0, a.output - b.output),
+    cacheRead: Math.max(0, a.cacheRead - b.cacheRead),
+    cacheCreate: Math.max(0, a.cacheCreate - b.cacheCreate),
+  };
+}
+
 /** Drop the awa-/wbd- ugliness into readable skill names. */
 export function skillLabel(s: string): string {
   return s.replace(/^awa-/, "awa:").replace(/^wbd-/, "wbd:");
