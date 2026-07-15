@@ -122,6 +122,7 @@ export async function buildMetaAndDocs(file: SessionFile): Promise<{ meta: Sessi
   const rewriteDetector = createCacheRewriteDetector();
   let cacheRewriteCount = 0;
   let cacheRewriteWastedUSD = 0;
+  let cacheRewriteWastedTokens = 0;
 
   for await (const obj of iterateJsonl(file.filePath)) {
     forkCollector.add(obj);
@@ -194,6 +195,7 @@ export async function buildMetaAndDocs(file: SessionFile): Promise<{ meta: Sessi
           if (rw) {
             cacheRewriteCount++;
             cacheRewriteWastedUSD += rw.wastedUSD;
+            cacheRewriteWastedTokens += rw.rewrittenTokens;
           }
         }
       }
@@ -322,6 +324,7 @@ export async function buildMetaAndDocs(file: SessionFile): Promise<{ meta: Sessi
       errors,
       cacheRewriteCount,
       cacheRewriteWastedUSD,
+      cacheRewriteWastedTokens,
       mcpTools: [...mcpTools],
       subagentCount: subagentRefs.length,
       subagentsCostUSD,
@@ -368,6 +371,7 @@ interface TranscriptStats {
   // Estimated avoidable surcost from cache rewrites (idle/context-edit) within
   // this transcript alone — subset of costByComponent.cacheCreate.
   cacheRewriteWastedUSD: number;
+  cacheRewriteWastedTokens: number;
   models: string[];
   start: string | null;
   end: string | null;
@@ -398,6 +402,7 @@ async function parseTranscript(filePath: string): Promise<ParsedTranscript> {
   let peakContextPct = 0;
   const rewriteDetector = createCacheRewriteDetector();
   let cacheRewriteWastedUSD = 0;
+  let cacheRewriteWastedTokens = 0;
 
   for await (const obj of iterateJsonl(filePath)) {
     const ts: string | undefined = obj.timestamp;
@@ -432,7 +437,10 @@ async function parseTranscript(filePath: string): Promise<ParsedTranscript> {
         // on their own cache stream and would corrupt the previous-context chain).
         if (obj.isSidechain !== true) {
           const rw = rewriteDetector.check(msg.usage, msg.model, ts);
-          if (rw) cacheRewriteWastedUSD += rw.wastedUSD;
+          if (rw) {
+            cacheRewriteWastedUSD += rw.wastedUSD;
+            cacheRewriteWastedTokens += rw.rewrittenTokens;
+          }
         }
       }
     }
@@ -457,6 +465,7 @@ async function parseTranscript(filePath: string): Promise<ParsedTranscript> {
       estCostUSD,
       costByComponent,
       cacheRewriteWastedUSD,
+      cacheRewriteWastedTokens,
       models: [...models],
       start,
       end,
@@ -907,6 +916,7 @@ export async function readSubagentDetail(
     estCostUSD: s.estCostUSD,
     costByComponent: s.costByComponent,
     cacheRewriteWastedUSD: s.cacheRewriteWastedUSD,
+    cacheRewriteWastedTokens: s.cacheRewriteWastedTokens,
     costWithChildrenUSD: self?.costWithChildrenUSD ?? s.estCostUSD,
     tokensWithChildren: self?.tokensWithChildren ?? s.tokens,
     models: s.models,

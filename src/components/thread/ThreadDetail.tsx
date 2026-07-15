@@ -9,7 +9,6 @@ import type {
   ThreadMessage,
   TokenTotals,
 } from "../../types";
-import { totalTokens } from "../../format";
 import { useFmt } from "../../hooks/useFmt";
 import { useT } from "../../hooks/useT";
 import { Message } from "../message";
@@ -40,9 +39,15 @@ export interface ThreadDetailProps {
   // Estimated avoidable surcost from cache rewrites, own cost only — subset of
   // costByComponent.cacheCreate.
   cacheRewriteWastedUSD: number;
+  // Tokens re-written instead of read, own transcript only — subset of
+  // tokens.cacheCreate. Feeds the same chart row as cacheRewriteWastedUSD.
+  cacheRewriteWastedTokens: number;
   // Cost including descendants. Rendered as a second line when it exceeds the
   // own cost (i.e. the node has subagents).
   withSubagentsCostUSD?: number;
+  // Flat token sum of every descendant subagent — feeds the chart's
+  // "Sub-agents" row. Absent/all-zero → that row is hidden.
+  subagentsTokens?: TokenTotals;
   models: string[];
   start: string | null;
   end: string | null;
@@ -137,42 +142,17 @@ export function ThreadDetail(p: ThreadDetailProps) {
 
       <aside className="detail-aside">
         <Panel title={t("detail_panel_cost")}>
-          <div className="kv">
-            <span className="k">{t("detail_cost_label")}</span>
-            <span className="v cost">{fmtCost(p.estCostUSD)}</span>
-          </div>
-          {hasWithSub && (
-            <div className="kv">
-              <span className="k">{t("detail_cost_with_sub")}</span>
-              <span className="v cost">{fmtCost(p.withSubagentsCostUSD!)}</span>
-            </div>
-          )}
           <CostBreakdownChart
             costByComponent={p.costByComponent}
+            tokensByComponent={p.tokens}
             cacheRewriteWastedUSD={p.cacheRewriteWastedUSD}
+            cacheRewriteWastedTokens={p.cacheRewriteWastedTokens}
             subagentsCostUSD={hasWithSub ? p.withSubagentsCostUSD! - p.estCostUSD : 0}
+            subagentsTokens={p.subagentsTokens}
+            estCostUSD={p.estCostUSD}
+            withSubagentsCostUSD={hasWithSub ? p.withSubagentsCostUSD : undefined}
           />
-          <div className="kv">
-            <span className="k">{t("detail_token_input")}</span>
-            <span className="v">{fmtTokens(p.tokens.input)}</span>
-          </div>
-          <div className="kv">
-            <span className="k">{t("detail_token_output")}</span>
-            <span className="v">{fmtTokens(p.tokens.output)}</span>
-          </div>
-          <div className="kv">
-            <span className="k">{t("detail_token_cache_read")}</span>
-            <span className="v">{fmtTokens(p.tokens.cacheRead)}</span>
-          </div>
-          <div className="kv">
-            <span className="k">{t("detail_token_cache_write")}</span>
-            <span className="v">{fmtTokens(p.tokens.cacheCreate)}</span>
-          </div>
-          <div className="kv">
-            <span className="k">{t("detail_token_total")}</span>
-            <span className="v">{fmtTokens(totalTokens(p.tokens))}</span>
-          </div>
-          <div className="kv">
+          <div className="kv" style={{ marginTop: "1em" }}>
             <span className="k">{t("detail_models")}</span>
             <span className="v">{p.models.join(", ") || "—"}</span>
           </div>

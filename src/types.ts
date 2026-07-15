@@ -67,6 +67,7 @@ export interface SessionMeta {
   // avoidable surcost. Lets the Sessions list surface wasteful sessions.
   cacheRewriteCount: number;
   cacheRewriteWastedUSD: number;
+  cacheRewriteWastedTokens: number;
   mcpTools: string[];
   subagentCount: number;
   // Aggregate cost/tokens of ALL subagent transcripts of this session (own cost
@@ -210,6 +211,7 @@ export interface SubagentDetail {
   // Estimated avoidable surcost from cache rewrites within this transcript
   // alone — subset of costByComponent.cacheCreate.
   cacheRewriteWastedUSD: number;
+  cacheRewriteWastedTokens: number;
   costWithChildrenUSD: number;
   tokensWithChildren: TokenTotals;
   models: string[];

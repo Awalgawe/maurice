@@ -627,6 +627,31 @@ tr.day-row td { background: var(--panel); color: var(--muted); font-size: 12px; 
 .dash-bar-row .dash-bar-track { flex: 1; height: 6px; background: var(--panel-2); border-radius: 3px; overflow: hidden; }
 .dash-bar-row .dash-bar-fill { height: 100%; background: var(--accent); border-radius: 3px; }
 .dash-bar-row .dash-bar-val { min-width: 74px; white-space: nowrap; text-align: right; color: var(--text); font-variant-numeric: tabular-nums; }
+.dash-stack-bar-wrap { position: relative; margin-top: 1em; }
+.dash-stack-bar { display: flex; height: 2em; border-radius: 4px; overflow: hidden; border: 1px solid var(--border); background: var(--panel-2); }
+.dash-stack-tip-anchor { position: absolute; top: 0; height: 100%; }
+.dash-stack-tip {
+  position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%);
+  background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px;
+  padding: 3px 8px; font-size: 12px; color: var(--text); white-space: nowrap;
+  opacity: 0; pointer-events: none; transition: opacity .1s; z-index: 5;
+}
+.dash-stack-tip-anchor:hover .dash-stack-tip { opacity: 1; }
+/* No row-gap/column-gap: a real grid gap is un-hoverable dead space, so the
+   pointer briefly hovers nothing when crossing between cells/rows — flashing
+   the hover-highlight off and on. Spacing is padding instead, kept inside
+   each cell's own box, so the hoverable area stays contiguous. */
+.dash-cost-table { display: grid; grid-template-columns: 18px 1fr auto auto; align-items: center; margin-top: 10px; font-size: 12px; }
+.dash-cost-swatch {
+  width: 100%; align-self: stretch; display: flex; align-items: center; transition: opacity .15s;
+  padding: 0 8px 0 0; box-sizing: border-box;
+}
+.dash-cost-dot { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+.dash-cost-name { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; transition: opacity .15s; padding: 2px 8px 2px 0; }
+.dash-cost-tokens { color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; transition: opacity .15s; padding: 2px 8px 2px 0; }
+.dash-cost-cost { color: var(--text); font-variant-numeric: tabular-nums; text-align: right; transition: opacity .15s; padding: 2px 0; }
+.dash-cost-bold-cell { font-weight: 600; color: var(--text); }
+.dash-cost-sep-cell { border-top: 1px solid var(--border); padding-top: 8px; margin-top: 2px; }
 .dash-donut-legend { display: flex; flex-direction: column; gap: 5px; margin-top: 10px; }
 .dash-donut-row { display: flex; align-items: center; gap: 8px; font-size: 12px; }
 .dash-donut-swatch { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
