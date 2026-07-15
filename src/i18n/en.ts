@@ -74,7 +74,12 @@ export const en: Record<I18nKey, string> = {
   sessions_day_today: "Today",
   sessions_day_yesterday: "Yesterday",
 
-  hint_readonly: "read-only · ~/.claude",
+  config_open: "Configuration",
+  config_close: "Close",
+  config_title: "Configuration",
+  config_theme: "Theme",
+  config_lang: "Language",
+  config_editor: "Editor",
 
   detail_back: "← Sessions",
   detail_panel_cost: "Cost & tokens (estimate)",

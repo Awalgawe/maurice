@@ -1,13 +1,11 @@
 import { NavLink } from "react-router-dom";
-import { EditorSelect } from "./EditorSelect";
-import { LangSelect } from "./LangSelect";
-import { ThemeSelect } from "./ThemeSelect";
+import { ConfigOverlay } from "./ConfigOverlay";
 import { useT } from "../../hooks/useT";
 import { useFmt } from "../../hooks/useFmt";
 import { useActiveSession, fmtElapsed } from "../../hooks/useActiveSession";
 import { totalTokens, modelLabel } from "../../format";
 
-/** Sticky top bar: brand + nav + live indicator + editor selector + read-only hint. */
+/** Sticky top bar: brand + nav + live indicator + config overlay trigger. */
 export function Topbar() {
   const t = useT();
   const { fmtCost, fmtTokens } = useFmt();
@@ -57,13 +55,7 @@ export function Topbar() {
           <div className="topbar-sep" />
         </>
       )}
-      <div className="topbar-tools">
-        <EditorSelect />
-        <LangSelect />
-        <ThemeSelect />
-      </div>
-      <div className="topbar-sep" />
-      <div className="hint">{t("hint_readonly")}</div>
+      <ConfigOverlay />
     </header>
   );
 }

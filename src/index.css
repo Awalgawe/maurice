@@ -192,15 +192,65 @@ a:hover { text-decoration: underline; }
 .nav a:hover { color: var(--text); }
 .nav a.active { color: var(--text); border-bottom-color: var(--color-active); }
 .topbar .spacer { flex: 1; }
-.topbar-tools { display: flex; gap: 6px; flex-shrink: 0; }
-.topbar .hint { color: var(--muted); font-size: 12px; white-space: nowrap; flex-shrink: 0; }
+
+.config-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: var(--radius-xs);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color .15s, background .15s, border-color .15s;
+}
+.config-trigger svg { flex-shrink: 0; }
+.config-trigger:hover { color: var(--text); background: var(--panel-2); border-color: var(--border); }
+
+.config-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, .45);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 80px;
+  z-index: 100;
+}
+.config-panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  width: 420px;
+  max-width: calc(100vw - 40px);
+  padding: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.config-panel-head { display: flex; align-items: center; justify-content: space-between; }
+.config-panel-head h3 { margin: 0; font-size: 15px; }
+.config-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.config-row .select-with-icon { flex-shrink: 0; }
+.config-close {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 6px;
+}
+.config-close:hover { color: var(--text); }
 
 /* The topbar needs ~1820px with a LIVE session (~1440px without). It must stay
    a single line without overflowing the page, so shed the least critical
    content in tiers as the window narrows. */
-@media (max-width: 1799px) {
-  .topbar .hint, .topbar .topbar-tools + .topbar-sep { display: none; }
-}
 @media (max-width: 1599px) {
   .topbar .live-extra { display: none; }
 }
@@ -208,15 +258,12 @@ a:hover { text-decoration: underline; }
 @media (max-width: 1549px) {
   .topbar--live .nav a { padding: 0 8px; }
   .topbar--live .live-project { max-width: 120px; }
-  .topbar--live .topbar-tools .select-with-icon:not(:first-child) { display: none; }
 }
 @media (max-width: 1299px) {
   .nav a { padding: 0 8px; }
-  /* Keep only the editor selector; lang/theme are persisted preferences. */
-  .topbar-tools .select-with-icon:not(:first-child) { display: none; }
 }
 @media (max-width: 1199px) {
-  .topbar-tools, .topbar-live + .topbar-sep { display: none; }
+  .topbar-live + .topbar-sep { display: none; }
 }
 @media (max-width: 1059px) {
   .live-project { display: none; }

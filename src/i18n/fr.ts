@@ -77,7 +77,12 @@ export const fr = {
   sessions_day_yesterday: "Hier",
 
   // Topbar
-  hint_readonly: "read-only · ~/.claude",
+  config_open: "Configuration",
+  config_close: "Fermer",
+  config_title: "Configuration",
+  config_theme: "Thème",
+  config_lang: "Langue",
+  config_editor: "Éditeur",
 
   // SessionDetail
   detail_back: "← Sessions",
