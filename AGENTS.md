@@ -54,6 +54,10 @@ Environment variables: `CLAUDE_DIR` (default `~/.claude`), `PORT` (default `5174
 - Tests are colocated: `foo.test.ts` next to `foo.ts` (see `server/parsers/`, `server/pricing.test.ts`).
 - Run `npm test` before considering a server-side change done. Parser changes need a test against representative JSONL fixtures.
 
+## Documentation screenshots
+
+The README gallery screenshots (`docs/screenshots/`) show real data with confidential bits (project/ticket/branch names, message content) CSS-blurred, not synthetic placeholders. Use the `screenshot-curator` subagent (`.claude/agents/screenshot-curator.md`) to (re)capture them — its prompt pins the whole recipe (theme, viewport, per-page selectors, blur process) rather than having it reinvented each time.
+
 ## PR / commit instructions
 
 - Conventional Commits (`feat:`, `fix:`, …), imperative mood, scope optional — see `git log` for the house style.
