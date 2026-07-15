@@ -8,7 +8,7 @@ import {
   subagentsFingerprint,
   type SessionFile,
 } from "../claudeDir.ts";
-import { contextWindowFor, estimateCost, estimateCostByComponent } from "../pricing.ts";
+import { contextWindowFor, estimateCostByComponent } from "../pricing.ts";
 import {
   contextTokens,
   emptyTokens,
@@ -360,6 +360,13 @@ const addTokens = (dst: TokenTotals, src: TokenTotals) => {
 interface TranscriptStats {
   tokens: TokenTotals;
   estCostUSD: number;
+  // USD per token component (input/output/cacheRead/cacheCreate) — same shape
+  // as SessionMeta.costByComponent, so the cost-breakdown chart renders
+  // identically for a subagent node and a session root.
+  costByComponent: TokenTotals;
+  // Estimated avoidable surcost from cache rewrites (idle/context-edit) within
+  // this transcript alone — subset of costByComponent.cacheCreate.
+  cacheRewriteWastedUSD: number;
   models: string[];
   start: string | null;
   end: string | null;
@@ -382,11 +389,14 @@ async function parseTranscript(filePath: string): Promise<ParsedTranscript> {
   const models = new Set<string>();
   const emittedTaskIds: string[] = [];
   const tokens = emptyTokens();
+  const costByComponent = emptyTokens(); // USD per token component
   let estCostUSD = 0;
   let start: string | null = null;
   let end: string | null = null;
   let errorCount = 0;
   let peakContextPct = 0;
+  const rewriteDetector = createCacheRewriteDetector();
+  let cacheRewriteWastedUSD = 0;
 
   for await (const obj of iterateJsonl(filePath)) {
     const ts: string | undefined = obj.timestamp;
@@ -403,13 +413,25 @@ async function parseTranscript(filePath: string): Promise<ParsedTranscript> {
         seenUsage.add(key);
         const t = tokensFromUsage(msg.usage);
         addTokens(tokens, t);
-        estCostUSD += estimateCost(msg.model, t);
+        const turnCostByComponent = estimateCostByComponent(msg.model, t);
+        addTokens(costByComponent, turnCostByComponent);
+        estCostUSD +=
+          turnCostByComponent.input +
+          turnCostByComponent.output +
+          turnCostByComponent.cacheRead +
+          turnCostByComponent.cacheCreate;
         const ctx = contextTokens(msg.usage);
         if (ctx > 0) {
           const model = isRealModel(msg.model) ? msg.model : null;
           const pct = Math.min(100, (ctx / contextWindowFor(model)) * 100);
           if (pct > peakContextPct) peakContextPct = pct;
           context.push({ t: ts ?? "", contextTokens: ctx, pct, model });
+        }
+        // Cache-rewrite anomalies: main-thread requests only (sidechains bill
+        // on their own cache stream and would corrupt the previous-context chain).
+        if (obj.isSidechain !== true) {
+          const rw = rewriteDetector.check(msg.usage, msg.model, ts);
+          if (rw) cacheRewriteWastedUSD += rw.wastedUSD;
         }
       }
     }
@@ -432,6 +454,8 @@ async function parseTranscript(filePath: string): Promise<ParsedTranscript> {
     stats: {
       tokens,
       estCostUSD,
+      costByComponent,
+      cacheRewriteWastedUSD,
       models: [...models],
       start,
       end,
@@ -867,6 +891,8 @@ export async function readSubagentDetail(
     context: parsed.context,
     tokens: s.tokens,
     estCostUSD: s.estCostUSD,
+    costByComponent: s.costByComponent,
+    cacheRewriteWastedUSD: s.cacheRewriteWastedUSD,
     costWithChildrenUSD: self?.costWithChildrenUSD ?? s.estCostUSD,
     tokensWithChildren: self?.tokensWithChildren ?? s.tokens,
     models: s.models,

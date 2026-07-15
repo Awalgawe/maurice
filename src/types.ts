@@ -200,6 +200,12 @@ export interface SubagentDetail {
   context: ContextPoint[];
   tokens: TokenTotals;
   estCostUSD: number;
+  // Estimated USD cost split per token component — same shape as
+  // SessionMeta.costByComponent, sum ≈ estCostUSD.
+  costByComponent: TokenTotals;
+  // Estimated avoidable surcost from cache rewrites within this transcript
+  // alone — subset of costByComponent.cacheCreate.
+  cacheRewriteWastedUSD: number;
   costWithChildrenUSD: number;
   tokensWithChildren: TokenTotals;
   models: string[];

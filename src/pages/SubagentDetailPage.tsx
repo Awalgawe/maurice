@@ -47,6 +47,8 @@ export default function SubagentDetailPage() {
       subagents={data.subagents}
       estCostUSD={data.estCostUSD}
       tokens={data.tokens}
+      costByComponent={data.costByComponent}
+      cacheRewriteWastedUSD={data.cacheRewriteWastedUSD}
       withSubagentsCostUSD={data.costWithChildrenUSD}
       models={data.models}
       start={data.start}

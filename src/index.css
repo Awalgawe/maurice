@@ -21,6 +21,9 @@
   /* Conversation forks (rewind branches) — distinct from red (errors),
      accent (human) and accent-2 (subagents) in every theme. */
   --fork: #e879f9;
+  /* Sub-agents' share of cost in the cost-breakdown donut — distinct from every
+     other slice color (accent, accent-2, green, amber, red) in every theme. */
+  --subagent-cost: #22d3ee;
   /* Categorical model colors (timeline bars / legends) */
   --model-opus: #a78bfa;
   --model-sonnet: #6ea8fe;
@@ -81,6 +84,7 @@
   --red: #b85c5c;
   --amber: #c98232;
   --fork: #a94fb0;
+  --subagent-cost: #3f8f8a;
   --model-opus: #7c5cd0;
   --model-sonnet: #4e6e91;
   --model-haiku: #4f8a68;
@@ -117,6 +121,7 @@
   --red: #dd8585;
   --amber: #dea168;
   --fork: #d693e0;
+  --subagent-cost: #6bc4c9;
   --model-opus: #b39ddb;
   --model-sonnet: #8cafd6;
   --model-haiku: #77b98d;

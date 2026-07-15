@@ -16,6 +16,7 @@ const PROJECT = "-tmp-proj";
 const SESSION = "s1";
 const SESSION_CYCLE = "s2";
 const SESSION_DEEP = "s3";
+const SESSION_REWRITE = "s4";
 
 const hz = (out: number, requestId: string) => ({
   type: "assistant",
@@ -127,6 +128,24 @@ const cycleMetas: Record<string, object> = {
   "agent-b": { toolUseId: "id-b" }, // spawned by id-b, which agent-a emits
 };
 
+// Session s4: one subagent transcript with a lone idle cache rewrite, mirroring
+// the fixture in sessions.test.ts's "buildMeta cache-rewrite aggregation".
+const u = (input: number, cacheRead: number, cacheCreate: number) => ({
+  input_tokens: input,
+  cache_read_input_tokens: cacheRead,
+  cache_creation_input_tokens: cacheCreate,
+});
+const rewriteAgents: Record<string, object[]> = {
+  "agent-rw": [
+    // First billed request: establishes the context, never flagged.
+    { type: "assistant", requestId: "rw1", timestamp: "2026-01-01T10:00:00Z",
+      message: { model: "claude-sonnet-4-6", usage: u(1000, 0, 99_000) } },
+    // 15 min idle → rewrite: 100k re-written instead of read.
+    { type: "assistant", requestId: "rw2", timestamp: "2026-01-01T10:15:00Z",
+      message: { model: "claude-sonnet-4-6", usage: u(500, 0, 100_000) } },
+  ],
+};
+
 function writeSession(session: string, ag: Record<string, object[]>, mt: Record<string, object>) {
   const subDir = path.join(dir, "projects", PROJECT, session, "subagents");
   fs.mkdirSync(subDir, { recursive: true });
@@ -144,6 +163,7 @@ beforeAll(async () => {
   writeSession(SESSION, agents, metas);
   writeSession(SESSION_CYCLE, cycleAgents, cycleMetas);
   writeSession(SESSION_DEEP, deepAgents, deepMetas);
+  writeSession(SESSION_REWRITE, rewriteAgents, {});
   ({ listSubagents, sumSubagents, readSubagentDetail, reaggregateSubagentMeta } = await import("./sessions.ts"));
   ({ subagentsFingerprint } = await import("../claudeDir.ts"));
 });
@@ -255,6 +275,20 @@ describe("readSubagentDetail", () => {
     // a mid-chain node still exposes only its own subtree.
     expect(new Set(y.subagents.map((s) => s.ref))).toEqual(new Set(["agent-z"]));
     expect(z.subagents).toEqual([]);
+  });
+
+  it("splits own cost per component and prices its own cache-rewrite waste", async () => {
+    const d = (await readSubagentDetail(PROJECT, SESSION_REWRITE, "agent-rw"))!;
+    // Sonnet pricing: input 3, cacheCreate 3.75, cacheRead 0.3 $/MTok.
+    expect(d.costByComponent.input).toBeCloseTo((1000 + 500) * 3 / 1_000_000, 12);
+    expect(d.costByComponent.cacheCreate).toBeCloseTo((99_000 + 100_000) * 3.75 / 1_000_000, 12);
+    expect(d.costByComponent.cacheRead).toBe(0);
+    const sumOfComponents =
+      d.costByComponent.input + d.costByComponent.output + d.costByComponent.cacheRead + d.costByComponent.cacheCreate;
+    expect(sumOfComponents).toBeCloseTo(d.estCostUSD, 12);
+    // 100k tokens re-written after a 15 min idle gap, at the write−read delta.
+    expect(d.cacheRewriteWastedUSD).toBeCloseTo((100_000 * (3.75 - 0.3)) / 1_000_000, 10);
+    expect(d.cacheRewriteWastedUSD).toBeLessThan(d.costByComponent.cacheCreate);
   });
 });
 
