@@ -89,7 +89,10 @@ export function CostBreakdownChart({
       <div className="dash-stack-bar-wrap">
         <div className="dash-stack-bar">
           {slices.map((s) => (
-            <div key={s.key} style={{ flexGrow: s.value, background: s.color, opacity: dim(s.key), transition: "opacity .15s" }} />
+            // Normalize by total: raw dollar values sum to <1 when the node
+            // costs under $1, and flex-grow factors summing to <1 leave the
+            // bar partly unfilled.
+            <div key={s.key} style={{ flexGrow: s.value / total, background: s.color, opacity: dim(s.key), transition: "opacity .15s" }} />
           ))}
         </div>
         {anchors.map((s) => (
