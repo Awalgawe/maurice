@@ -1,5 +1,6 @@
 import type {
   ActiveSession,
+  AgentRow,
   BilanDetail,
   BilanMeta,
   Facets,
@@ -54,6 +55,8 @@ export const getPlans = () => get<PlanEntry[]>("/api/plans");
 export const getHooks = () => get<HookEntry[]>("/api/hooks");
 
 export const getMcpTools = () => get<McpInfo>("/api/mcp-tools");
+
+export const getAgents = () => get<{ agents: AgentRow[] }>("/api/agents").then((r) => r.agents);
 
 export const deletePlan = (scope: string, projectId: string, filename: string): Promise<void> =>
   fetch("/api/plans", {

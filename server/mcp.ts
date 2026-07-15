@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getIndex } from "./cache.ts";
 import { readDetail } from "./parsers/sessions.ts";
 import { listMemories } from "./parsers/memory.ts";
+import { buildAgentRows } from "./parsers/agents.ts";
 import { listBilans, readBilan } from "./parsers/bilans.ts";
 import { searchDocs } from "./parsers/searchIndex.ts";
 import { computeFacets } from "./facets.ts";
@@ -312,6 +313,22 @@ export function createMcpServer(): McpServer {
       const top = all.slice(0, limit ?? 20);
       return json({ total: all.length, count: top.length, errors: top });
     },
+  );
+
+  server.registerTool(
+    "agents",
+    {
+      title: "Agents registry + usage",
+      description:
+        "List every agentType seen across subagent transcripts, joined with its on-disk definition when one exists " +
+        "(~/.claude/agents, a project's .claude/agents, or an installed plugin). `origin` is inferred (no field marks " +
+        "it): \"plugin\" for a namespaced name, \"custom\" when found in the user/project registry, \"builtin\" for a " +
+        "hardcoded snapshot of Claude Code's shipped agents, else \"unknown\". Either `definitions` or `usage` can be " +
+        "empty — a defined-but-never-used agent, or a used agentType with no matching definition.",
+      inputSchema: {},
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    async () => json({ agents: buildAgentRows(await getIndex()) }),
   );
 
   server.registerTool(

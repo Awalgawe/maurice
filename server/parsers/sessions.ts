@@ -293,7 +293,7 @@ export async function buildMetaAndDocs(file: SessionFile): Promise<{ meta: Sessi
   // Subagent transcripts live in a sibling dir, never in this file — parse them
   // to aggregate their cost/tokens separately (NOT folded into estCostUSD).
   const subagentRefs = await listSubagents(file.projectId, file.id);
-  const { subagentsCostUSD, subagentsTokens } = sumSubagents(subagentRefs);
+  const { subagentsCostUSD, subagentsTokens, subagentsByType } = sumSubagents(subagentRefs);
 
   return {
     meta: {
@@ -326,6 +326,7 @@ export async function buildMetaAndDocs(file: SessionFile): Promise<{ meta: Sessi
       subagentCount: subagentRefs.length,
       subagentsCostUSD,
       subagentsTokens,
+      subagentsByType,
       firstUserPrompt,
       skillTokens,
       skillCost,
@@ -576,15 +577,28 @@ export async function listSubagents(projectId: string, id: string): Promise<Suba
 }
 
 /** Session-level aggregate: own cost/tokens of every subagent, summed flat (the
- *  dir is flat, so this equals Σ of the roots' with-descendants figures). */
-export function sumSubagents(refs: SubagentRef[]): { subagentsCostUSD: number; subagentsTokens: TokenTotals } {
+ *  dir is flat, so this equals Σ of the roots' with-descendants figures), plus
+ *  the same sum ventilated per agentType (missing/unset agentType groups under
+ *  "(unknown)"). Powers the /agents usage view without re-parsing every
+ *  subagent transcript on each request. */
+export function sumSubagents(refs: SubagentRef[]): {
+  subagentsCostUSD: number;
+  subagentsTokens: TokenTotals;
+  subagentsByType: Record<string, { count: number; costUSD: number; tokens: TokenTotals }>;
+} {
   const subagentsTokens = emptyTokens();
   let subagentsCostUSD = 0;
+  const subagentsByType: Record<string, { count: number; costUSD: number; tokens: TokenTotals }> = {};
   for (const r of refs) {
     subagentsCostUSD += r.estCostUSD;
     addTokens(subagentsTokens, r.tokens);
+    const key = r.agentType ?? "(unknown)";
+    const bucket = subagentsByType[key] ?? (subagentsByType[key] = { count: 0, costUSD: 0, tokens: emptyTokens() });
+    bucket.count += 1;
+    bucket.costUSD += r.estCostUSD;
+    addTokens(bucket.tokens, r.tokens);
   }
-  return { subagentsCostUSD, subagentsTokens };
+  return { subagentsCostUSD, subagentsTokens, subagentsByType };
 }
 
 /** Refresh only the subagent aggregate of a cached session meta, reusing every
@@ -597,8 +611,8 @@ export async function reaggregateSubagentMeta(
   id: string,
 ): Promise<SessionMeta> {
   const refs = await listSubagents(projectId, id);
-  const { subagentsCostUSD, subagentsTokens } = sumSubagents(refs);
-  return { ...prevMeta, subagentCount: refs.length, subagentsCostUSD, subagentsTokens };
+  const { subagentsCostUSD, subagentsTokens, subagentsByType } = sumSubagents(refs);
+  return { ...prevMeta, subagentCount: refs.length, subagentsCostUSD, subagentsTokens, subagentsByType };
 }
 
 /**

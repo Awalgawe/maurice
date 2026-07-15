@@ -12,6 +12,7 @@ import Timeline from "./pages/Timeline";
 import Memories from "./pages/Memories";
 import Plans from "./pages/Plans";
 import Hooks from "./pages/Hooks";
+import Agents from "./pages/Agents";
 import Mcp from "./pages/Mcp";
 import Bilans from "./pages/Bilans";
 import { EditorProvider } from "./state/EditorContext";
@@ -35,6 +36,7 @@ function Main() {
         <Route path="/memories" element={<Memories />} />
         <Route path="/plans" element={<Plans />} />
         <Route path="/hooks" element={<Hooks />} />
+        <Route path="/agents" element={<Agents />} />
         <Route path="/mcp" element={<Mcp />} />
         <Route path="/bilans" element={<Bilans />} />
       </Routes>
