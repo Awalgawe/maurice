@@ -203,6 +203,54 @@ describe("buildMeta cache-rewrite aggregation", () => {
   });
 });
 
+describe("buildMeta turn durations + API reliability", () => {
+  let tdir: string;
+  let tfile: SessionFile;
+
+  // Two turn_duration lines 48h apart → always two distinct local days,
+  // whatever the runner's timezone (mirrors the per-day cost fixture above).
+  const tlines = [
+    { type: "system", subtype: "turn_duration", durationMs: 60_000, messageCount: 4, timestamp: "2026-01-01T12:00:00Z" },
+    { type: "system", subtype: "turn_duration", durationMs: 120_000, messageCount: 6, timestamp: "2026-01-03T12:00:00Z" },
+    { type: "system", subtype: "api_error", error: { message: "overloaded" }, retryInMs: 2000, retryAttempt: 1, maxRetries: 3, timestamp: "2026-01-01T12:00:30Z" },
+    { type: "assistant", timestamp: "2026-01-01T12:00:31Z", isApiErrorMessage: true, apiErrorStatus: 529,
+      message: { model: "<synthetic>", content: [{ type: "text", text: "API Error" }] } },
+    { type: "assistant", requestId: "t1", timestamp: "2026-01-01T12:01:00Z",
+      message: { model: "claude-sonnet-4-6", usage: { input_tokens: 100, output_tokens: 50 } } },
+  ];
+
+  beforeAll(() => {
+    tdir = fs.mkdtempSync(path.join(os.tmpdir(), "sess-turn-"));
+    const fp = path.join(tdir, "t1.jsonl");
+    fs.writeFileSync(fp, tlines.map((l) => JSON.stringify(l)).join("\n") + "\n");
+    const stat = fs.statSync(fp);
+    tfile = { id: "t1", projectId: "-tmp-proj", filePath: fp, size: stat.size, mtimeMs: stat.mtimeMs };
+  });
+
+  afterAll(() => fs.rmSync(tdir, { recursive: true, force: true }));
+
+  it("aggregates turn durations, their day bucketing, and API reliability counters", async () => {
+    const m = await buildMeta(tfile);
+    expect(m.turnCount).toBe(2);
+    expect(m.totalTurnDurationMs).toBe(180_000);
+    expect(m.medianTurnMs).toBe(60_000); // lower-middle of [60_000, 120_000]
+    expect(Object.keys(m.turnDurationByDay ?? {})).toHaveLength(2);
+    expect(Object.values(m.turnDurationByDay ?? {}).reduce((a, b) => a + b, 0)).toBe(180_000);
+    expect(m.apiRetryCount).toBe(1);
+    expect(m.apiErrorMessageCount).toBe(1);
+  });
+
+  it("reports empty-but-present fields when a session has none of these lines", async () => {
+    const m = await buildMeta(file); // the main fixture at the top of this file
+    expect(m.turnCount).toBe(0);
+    expect(m.totalTurnDurationMs).toBe(0);
+    expect(m.medianTurnMs).toBeNull();
+    expect(m.turnDurationByDay).toEqual({});
+    expect(m.apiRetryCount).toBe(0);
+    expect(m.apiErrorMessageCount).toBe(0);
+  });
+});
+
 describe("classifyMessage", () => {
   const text = (s: string): ContentBlock => ({ kind: "text", text: s });
   const toolResult = (toolUseId: string | null): ContentBlock => ({

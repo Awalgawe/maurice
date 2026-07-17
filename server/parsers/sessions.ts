@@ -126,6 +126,14 @@ export async function buildMetaAndDocs(file: SessionFile): Promise<{ meta: Sessi
   let cacheRewriteWastedTokens = 0;
   let aiTitle: string | null = null;
   let agentName: string | null = null;
+  // Real wall-clock turn durations (system/turn_duration) and API reliability
+  // counters (system/api_error retries, isApiErrorMessage assistant lines).
+  let turnCount = 0;
+  let totalTurnDurationMs = 0;
+  let apiRetryCount = 0;
+  let apiErrorMessageCount = 0;
+  const turnDurationByDay: Record<string, number> = {};
+  const turnDurations: number[] = []; // transient, reduced to medianTurnMs below
 
   for await (const obj of iterateJsonl(file.filePath)) {
     forkCollector.add(obj);
@@ -150,6 +158,23 @@ export async function buildMetaAndDocs(file: SessionFile): Promise<{ meta: Sessi
       agentName = obj.agentName;
     }
 
+    if (type === "system") {
+      if (obj.subtype === "turn_duration") {
+        const durationMs = obj.durationMs;
+        if (typeof durationMs === "number" && Number.isFinite(durationMs) && durationMs > 0) {
+          turnCount++;
+          totalTurnDurationMs += durationMs;
+          turnDurations.push(durationMs);
+          if (ts) {
+            const day = localYmd(new Date(ts));
+            turnDurationByDay[day] = (turnDurationByDay[day] || 0) + durationMs;
+          }
+        }
+      } else if (obj.subtype === "api_error") {
+        apiRetryCount++;
+      }
+    }
+
     if (type === "user" || type === "assistant") {
       messageCount++;
       if (ts) {
@@ -162,6 +187,7 @@ export async function buildMetaAndDocs(file: SessionFile): Promise<{ meta: Sessi
 
     if (type === "assistant" && msg) {
       if (isRealModel(msg.model)) models.add(msg.model);
+      if (obj.isApiErrorMessage === true) apiErrorMessageCount++;
       const key = obj.requestId || msg.id || obj.uuid;
       if (key && !seenUsage.has(key)) {
         seenUsage.add(key);
@@ -264,6 +290,12 @@ export async function buildMetaAndDocs(file: SessionFile): Promise<{ meta: Sessi
     }
   }
 
+  // Lower-middle element of the sorted durations — cheap, stable median.
+  turnDurations.sort((a, b) => a - b);
+  const medianTurnMs = turnDurations.length
+    ? turnDurations[Math.floor((turnDurations.length - 1) / 2)]
+    : null;
+
   // Locate every text-bearing message: owning view + position within it (the
   // same view/order readDetail serves, so search hits deep-link to a page).
   const analysis = forkCollector.finish();
@@ -344,6 +376,12 @@ export async function buildMetaAndDocs(file: SessionFile): Promise<{ meta: Sessi
       firstUserPrompt,
       aiTitle,
       agentName,
+      turnCount,
+      totalTurnDurationMs,
+      medianTurnMs,
+      turnDurationByDay,
+      apiRetryCount,
+      apiErrorMessageCount,
       skillTokens,
       skillCost,
       modelTokens,

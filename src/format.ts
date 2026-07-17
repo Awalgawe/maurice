@@ -74,6 +74,15 @@ export function totalTokens(t: {
   return t.input + t.output + t.cacheRead + t.cacheCreate;
 }
 
+/** Compact duration label, locale-neutral ("42 min", "3 h 12"). */
+export function fmtDurationMs(ms: number): string {
+  const min = Math.round(ms / 60_000);
+  if (min < 60) return `${min} min`;
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return m ? `${h} h ${String(m).padStart(2, "0")}` : `${h} h`;
+}
+
 /** Component-wise a − b, floored at 0 (children totals shouldn't go negative,
  *  but rounding/ordering across separately-parsed transcripts could). */
 export function subtractTokens(
