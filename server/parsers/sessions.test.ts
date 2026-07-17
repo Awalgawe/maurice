@@ -311,6 +311,71 @@ describe("buildMeta friction metrics", () => {
   });
 });
 
+describe("buildMeta hook execution stats", () => {
+  let hkdir: string;
+  let hkfile: SessionFile;
+
+  const hklines = [
+    // Two hook_success on the same hookName: durationMs 100 (number) + "300" (string, proves coercion).
+    { type: "attachment", timestamp: "2026-01-01T10:00:00Z",
+      attachment: { type: "hook_success", hookName: "PostToolUse:Bash", durationMs: 100,
+        command: "echo SUPER_SECRET_CMD_1", stdout: "ok" } },
+    { type: "attachment", timestamp: "2026-01-01T10:00:01Z",
+      attachment: { type: "hook_success", hookName: "PostToolUse:Bash", durationMs: "300",
+        command: "echo SUPER_SECRET_CMD_2", stdout: "ok" } },
+    // A different hookName, no durationMs.
+    { type: "attachment", timestamp: "2026-01-01T10:00:02Z",
+      attachment: { type: "hook_success", hookName: "Stop", command: "echo SUPER_SECRET_CMD_3" } },
+    // Async response on the first hookName — counted separately from fires.
+    { type: "attachment", timestamp: "2026-01-01T10:00:03Z",
+      attachment: { type: "async_hook_response", hookName: "PostToolUse:Bash", processId: 42 } },
+    // Non-blocking error on the second hookName.
+    { type: "attachment", timestamp: "2026-01-01T10:00:04Z",
+      attachment: { type: "hook_non_blocking_error", hookName: "Stop" } },
+    // Two stop_hook_summary lines: one with an error, one without.
+    { type: "system", subtype: "stop_hook_summary", timestamp: "2026-01-01T10:00:05Z", hookErrors: ["boom"] },
+    { type: "system", subtype: "stop_hook_summary", timestamp: "2026-01-01T10:00:06Z", hookErrors: [] },
+  ];
+
+  beforeAll(() => {
+    hkdir = fs.mkdtempSync(path.join(os.tmpdir(), "sess-hooks-"));
+    const fp = path.join(hkdir, "hk1.jsonl");
+    fs.writeFileSync(fp, hklines.map((l) => JSON.stringify(l)).join("\n") + "\n");
+    const stat = fs.statSync(fp);
+    hkfile = { id: "hk1", projectId: "-tmp-proj", filePath: fp, size: stat.size, mtimeMs: stat.mtimeMs };
+  });
+
+  afterAll(() => fs.rmSync(hkdir, { recursive: true, force: true }));
+
+  it("aggregates fires/duration/async/errors per hookName", async () => {
+    const m = await buildMeta(hkfile);
+    expect(m.hookStats).toEqual({
+      "PostToolUse:Bash": { fires: 2, totalDurationMs: 400, asyncResponses: 1, errors: 0 },
+      Stop: { fires: 1, totalDurationMs: 0, asyncResponses: 0, errors: 1 },
+    });
+  });
+
+  it("counts stop_hook_summary runs and hook errors (array entries + non-blocking errors)", async () => {
+    const m = await buildMeta(hkfile);
+    expect(m.stopHookRuns).toBe(2);
+    // 1 entry in the first stop_hook_summary's hookErrors + 1 hook_non_blocking_error.
+    expect(m.hookErrorCount).toBe(2);
+  });
+
+  it("never stores command/stdout strings in the meta", async () => {
+    const m = await buildMeta(hkfile);
+    const serialized = JSON.stringify(m);
+    expect(serialized).not.toContain("SUPER_SECRET_CMD");
+  });
+
+  it("reports empty hookStats and zero counters when a session has no hook lines", async () => {
+    const m = await buildMeta(file); // the main fixture at the top of this file
+    expect(m.hookStats).toEqual({});
+    expect(m.stopHookRuns).toBe(0);
+    expect(m.hookErrorCount).toBe(0);
+  });
+});
+
 describe("classifyMessage", () => {
   const text = (s: string): ContentBlock => ({ kind: "text", text: s });
   const toolResult = (toolUseId: string | null): ContentBlock => ({

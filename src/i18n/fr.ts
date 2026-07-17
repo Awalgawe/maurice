@@ -190,6 +190,13 @@ export const fr = {
   hooks_count_one: "hook",
   hooks_count_many: "hooks",
   hooks_empty: "Aucun hook configuré.",
+  hooks_usage_title: "Exécutions (toutes sessions)",
+  hooks_usage_col_hook: "Hook",
+  hooks_usage_col_fires: "Exécutions",
+  hooks_usage_col_avg: "Durée moy.",
+  hooks_usage_col_async: "Async",
+  hooks_usage_col_errors: "Erreurs",
+  hooks_usage_col_sessions: "Sessions",
 
   // Agents
   agents_filter_origin: "Origine",
