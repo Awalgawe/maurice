@@ -74,7 +74,9 @@ export const Message = React.memo(function Message({ m, compact = false }: { m: 
               `${fmtTokens(m.cacheRewrite.rewrittenTokens)} ${t("message_cache_rewrite_tokens")} · ` +
               (m.cacheRewrite.cause === "idle"
                 ? `${t("message_cache_rewrite_idle")}${m.cacheRewrite.gapMs !== null ? ` (${Math.round(m.cacheRewrite.gapMs / 60000)} min)` : ""}`
-                : t("message_cache_rewrite_edit"))
+                : m.cacheRewrite.cause === "tools-changed"
+                  ? t("message_cache_rewrite_tools")
+                  : t("message_cache_rewrite_edit"))
             }
           >
             ⚠ {t("message_cache_rewrite_chip")} ≈{fmtCost(m.cacheRewrite.wastedUSD)}

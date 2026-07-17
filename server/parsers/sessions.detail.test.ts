@@ -204,3 +204,34 @@ describe("readDetail cache-rewrite flags", () => {
     expect(d!.cacheRewrites[0]).toMatchObject({ uuid: "a2", index: 3, cause: "idle" });
   });
 });
+
+describe("readDetail per-message token dedup", () => {
+  const TOK_SESSION = "s-tokens";
+
+  // One API response split over two JSONL lines sharing r1, each repeating the
+  // FULL usage — like real multi-block responses (thinking + text + tool_use).
+  const tokLines = [
+    human("u1", null, "start", "2026-01-01T10:00:00Z"),
+    assistant("a1", "u1", "r1", "2026-01-01T10:00:05Z",
+      { usage: { input_tokens: 100, output_tokens: 480 } }),
+    assistant("a1b", "a1", "r1", "2026-01-01T10:00:06Z",
+      { usage: { input_tokens: 100, output_tokens: 480 } }),
+    assistant("a2", "a1b", "r2", "2026-01-01T10:01:00Z",
+      { usage: { input_tokens: 200, output_tokens: 10 } }),
+  ];
+
+  it("attaches usage to the request's first message only", async () => {
+    const fp4 = sessionFilePath(PROJECT, TOK_SESSION);
+    fs.writeFileSync(fp4, tokLines.map((l) => JSON.stringify(l)).join("\n") + "\n");
+    const stat4 = fs.statSync(fp4);
+    const meta4 = await buildMeta({ id: TOK_SESSION, projectId: PROJECT, filePath: fp4, size: stat4.size, mtimeMs: stat4.mtimeMs });
+    const d = await readDetail(meta4, 0, 100);
+    const byUuid = new Map(d!.messages.map((m) => [m.uuid, m]));
+    expect(byUuid.get("a1")!.tokens).toMatchObject({ input: 100, output: 480 });
+    expect(byUuid.get("a1b")!.tokens).toBeNull(); // same requestId → deduped
+    expect(byUuid.get("a2")!.tokens).toMatchObject({ input: 200, output: 10 });
+    // The view sum now matches the deduped index totals.
+    const viewOutput = d!.messages.reduce((a, m) => a + (m.tokens?.output ?? 0), 0);
+    expect(viewOutput).toBe(meta4.tokens.output);
+  });
+});

@@ -12,7 +12,10 @@ export interface TokenTotals {
  *  re-written at the cache-write rate instead — an avoidable surcost when the
  *  cause is an idle gap beyond the provider's cache TTL. */
 export interface CacheRewrite {
-  cause: "idle" | "context-edit"; // idle = gap > cache TTL, expiry is certain
+  // idle = gap > cache TTL (expiry is certain); tools-changed = the request's
+  // tool definitions changed (diagnostics.cache_miss_reason, authoritative);
+  // context-edit = anything else (compact, rewind…).
+  cause: "idle" | "context-edit" | "tools-changed";
   rewrittenTokens: number; // previous-context tokens re-written instead of read
   wastedUSD: number; // estimated surcost vs a warm cache (write − read rate)
   gapMs: number | null; // time since the previous billed request
