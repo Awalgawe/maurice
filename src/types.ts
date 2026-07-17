@@ -89,6 +89,15 @@ export interface SessionMeta {
   // "agent-name" JSONL lines, last wins). Optional: absent pre-v17 cache.
   aiTitle?: string | null;
   agentName?: string | null;
+  // Real wall-clock turn durations (system/turn_duration lines) and API
+  // reliability counters (system/api_error retries, isApiErrorMessage
+  // assistant lines). Optional: absent pre-v18 cache.
+  turnCount?: number;
+  totalTurnDurationMs?: number;
+  medianTurnMs?: number | null;
+  turnDurationByDay?: Record<string, number>;
+  apiRetryCount?: number;
+  apiErrorMessageCount?: number;
   // Per-skill attribution (by attributionSkill on each assistant turn), so the
   // Workflow skill pivot doesn't double-count a session across its skills.
   skillTokens: Record<string, number>;

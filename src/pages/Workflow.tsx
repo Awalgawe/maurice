@@ -2,14 +2,14 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import type { SessionMeta } from "../types";
 import { getSessions } from "../api";
-import { skillLabel, totalTokens } from "../format";
+import { fmtDurationMs, skillLabel, totalTokens } from "../format";
 import { useSortable } from "../hooks/useSortable";
 import { useFmt } from "../hooks/useFmt";
 import { useT } from "../hooks/useT";
 import { SortHeader } from "../components/ui/SortHeader";
 
 type Pivot = "skill" | "ticket" | "branch";
-type SortKey = "label" | "project" | "sessions" | "tokens" | "cost" | "errors";
+type SortKey = "label" | "project" | "sessions" | "tokens" | "cost" | "duration" | "errors";
 
 interface Group {
   key: string;
@@ -18,6 +18,7 @@ interface Group {
   sessions: SessionMeta[];
   tokens: number;
   cost: number;
+  duration: number;
   errors: number;
 }
 
@@ -40,12 +41,15 @@ export default function Workflow() {
     const add = (key: string, label: string, s: SessionMeta, tokens: number, cost: number, sublabel?: string) => {
       let g = map.get(key);
       if (!g) {
-        g = { key, label, sublabel, sessions: [], tokens: 0, cost: 0, errors: 0 };
+        g = { key, label, sublabel, sessions: [], tokens: 0, cost: 0, duration: 0, errors: 0 };
         map.set(key, g);
       }
       g.sessions.push(s);
       g.tokens += tokens;
       g.cost += cost;
+      // Not split per-skill (no per-skill duration data): full session duration
+      // counted in every group it belongs to, same convention as errors above.
+      g.duration += s.totalTurnDurationMs ?? 0;
       g.errors += s.errorCount;
     };
     for (const s of sessions) {
@@ -79,6 +83,7 @@ export default function Workflow() {
         case "sessions": return g.sessions.length;
         case "tokens":   return g.tokens;
         case "cost":     return g.cost;
+        case "duration": return g.duration;
         case "errors":   return g.errors;
       }
     };
@@ -113,6 +118,7 @@ export default function Workflow() {
             <SortHeader k="sessions" label={t("workflow_col_sessions")} className="num" {...sortProps} />
             <SortHeader k="tokens" label={t("workflow_col_tokens")} className="num" {...sortProps} />
             <SortHeader k="cost" label={t("workflow_col_cost")} className="num" {...sortProps} />
+            <SortHeader k="duration" label={t("workflow_col_duration")} className="num" {...sortProps} />
             <SortHeader k="errors" label={t("workflow_col_errors")} className="num" {...sortProps} />
           </tr>
         </thead>
@@ -127,6 +133,7 @@ export default function Workflow() {
                 <td className="num">{g.sessions.length}</td>
                 <td className="num">{fmtTokens(g.tokens)}</td>
                 <td className="num cost">{fmtCost(g.cost)}</td>
+                <td className="num muted">{g.duration > 0 ? fmtDurationMs(g.duration) : ""}</td>
                 <td className="num">{g.errors || ""}</td>
               </tr>
               {open === g.key &&
@@ -140,6 +147,7 @@ export default function Workflow() {
                     switch (sortKey) {
                       case "tokens":   return sortDir * (tv(a) - tv(b));
                       case "cost":     return sortDir * (cv(a) - cv(b));
+                      case "duration": return sortDir * ((a.totalTurnDurationMs ?? 0) - (b.totalTurnDurationMs ?? 0));
                       case "errors":   return sortDir * (a.errorCount - b.errorCount);
                       case "project":  return sortDir * a.projectLabel.localeCompare(b.projectLabel);
                       case "sessions": return sortDir * (a.messageCount - b.messageCount);
@@ -165,6 +173,7 @@ export default function Workflow() {
                         <td className="num muted">{s.messageCount} {t("workflow_msgs")}</td>
                         <td className="num">{fmtTokens(rowTokens)}</td>
                         <td className="num cost">{fmtCost(rowCost)}</td>
+                        <td className="num muted">{s.totalTurnDurationMs ? fmtDurationMs(s.totalTurnDurationMs) : ""}</td>
                         <td className="num">{s.errorCount || ""}</td>
                       </tr>
                     );

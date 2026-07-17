@@ -9,7 +9,7 @@ import type { SessionMeta } from "../src/types.ts";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CACHE_DIR = path.join(__dirname, "..", ".cache");
 const CACHE_FILE = path.join(CACHE_DIR, "index.json");
-const CACHE_VERSION = 17; // 17: aiTitle/agentName in SessionMeta
+const CACHE_VERSION = 18; // 18: turn durations + API reliability counters
 
 interface CacheEntry {
   size: number;

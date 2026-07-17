@@ -16,7 +16,7 @@ import {
 } from "recharts";
 import type { SessionMeta } from "../types";
 import { getSessions } from "../api";
-import { colorForModel, dominantModel, modelLabel, skillLabel, totalTokens } from "../format";
+import { colorForModel, dominantModel, fmtDurationMs, modelLabel, skillLabel, totalTokens } from "../format";
 import { useFmt } from "../hooks/useFmt";
 import { useT } from "../hooks/useT";
 import { useLang } from "../state/LangContext";
@@ -64,14 +64,7 @@ function sortedEntries(r: Record<string, number>, topN?: number) {
   return topN ? entries.slice(0, topN) : entries;
 }
 
-/** Compact duration label, locale-neutral ("42 min", "3 h 12"). */
-function fmtDuration(ms: number): string {
-  const min = Math.round(ms / 60_000);
-  if (min < 60) return `${min} min`;
-  const h = Math.floor(min / 60);
-  const m = min % 60;
-  return m ? `${h} h ${String(m).padStart(2, "0")}` : `${h} h`;
-}
+const fmtDuration = fmtDurationMs;
 
 export default function Dashboard() {
   const t = useT();
@@ -145,6 +138,12 @@ export default function Dashboard() {
     const heat: number[][] = Array.from({ length: 7 }, () => new Array(24).fill(0));
     const durations: number[] = []; // wall-clock span per session (median below — robust to left-open outliers)
     const allErrors: { ts: string | null; tool: string; excerpt: string; sessionId: string; projectLabel: string }[] = [];
+    // Real active time (turn_duration lines), day-clipped like costByDay; falls
+    // back to the session-level total when no per-day breakdown is cached.
+    let workMs = 0;
+    let turnCount = 0;
+    let apiRetryCount = 0;
+    let apiErrorMessageCount = 0;
 
     for (const s of scoped) {
       totalCost += s.estCostUSD;
@@ -195,6 +194,18 @@ export default function Dashboard() {
         const dur = new Date(s.end).getTime() - new Date(s.start).getTime();
         if (dur > 0) durations.push(dur);
       }
+
+      turnCount += s.turnCount ?? 0;
+      apiRetryCount += s.apiRetryCount ?? 0;
+      apiErrorMessageCount += s.apiErrorMessageCount ?? 0;
+      if (s.turnDurationByDay && Object.keys(s.turnDurationByDay).length) {
+        for (const [day, ms] of Object.entries(s.turnDurationByDay)) {
+          if (cutoffDay && day < cutoffDay) continue;
+          workMs += ms;
+        }
+      } else {
+        workMs += s.totalTurnDurationMs ?? 0;
+      }
     }
 
     const timeline = Object.entries(dayMap)
@@ -220,6 +231,8 @@ export default function Dashboard() {
       totalCost, totalTok, totalErrors, sessionCount: n,
       avgCost: totalCost / n, avgTok: totalTok / n,
       medianDurationMs,
+      workMs, avgTurnMs: turnCount > 0 ? workMs / turnCount : 0,
+      apiRetryCount, apiErrorMessageCount,
       cacheHitPct,
       compVolume: [inTok, outTok, crTok, ccTok],
       compCost: [costComp.input, costComp.output, costComp.cacheRead, costComp.cacheCreate],
@@ -387,6 +400,14 @@ export default function Dashboard() {
               <span className="dash-stat-label">{t("dashboard_kpi_sessions")}</span>
               <span className="dash-stat-val">{agg.sessionCount}</span>
             </div>
+            <div className="dash-stat-row">
+              <span className="dash-stat-label">{t("dashboard_act_time_spent")}</span>
+              <span className="dash-stat-val">{agg.workMs > 0 ? fmtDuration(agg.workMs) : "—"}</span>
+            </div>
+            <div className="dash-stat-row">
+              <span className="dash-stat-label">{t("dashboard_act_avg_turn")}</span>
+              <span className="dash-stat-val">{agg.avgTurnMs > 0 ? fmtDuration(agg.avgTurnMs) : "—"}</span>
+            </div>
           </Panel>
         </div>
       </div>
@@ -522,7 +543,7 @@ export default function Dashboard() {
       {/* ── Santé & contexte ── */}
       <div className="dash-section">
         <h2>{t("dashboard_section_health")}</h2>
-        <div className="dash-grid dash-grid-3">
+        <div className="dash-grid dash-grid-4">
           {/* Distribution pic de contexte */}
           <Panel title={t("dashboard_health_ctx_dist")}>
             <div style={{ flex: 1, minHeight: 130, minWidth: 0 }}>
@@ -570,6 +591,18 @@ export default function Dashboard() {
                 ))}
               </div>
             )}
+          </Panel>
+
+          {/* Fiabilité API */}
+          <Panel title={t("dashboard_reliability_title")}>
+            <div className="dash-stat-row">
+              <span className="dash-stat-label">{t("dashboard_reliability_retries")}</span>
+              <span className="dash-stat-val">{agg.apiRetryCount}</span>
+            </div>
+            <div className="dash-stat-row">
+              <span className="dash-stat-label">{t("dashboard_reliability_errors")}</span>
+              <span className="dash-stat-val">{agg.apiErrorMessageCount}</span>
+            </div>
           </Panel>
 
           {/* MCP */}
