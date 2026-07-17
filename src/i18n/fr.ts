@@ -47,6 +47,12 @@ export const fr = {
   dashboard_reliability_title: "Fiabilité API",
   dashboard_reliability_retries: "Retries API",
   dashboard_reliability_errors: "Messages en erreur",
+  dashboard_friction_title: "Friction",
+  dashboard_friction_interruptions: "Interruptions",
+  dashboard_friction_denials: "Refus d'outils",
+  dashboard_friction_prompts_typed: "Prompts tapés",
+  dashboard_friction_prompts_sdk: "Prompts SDK",
+  dashboard_friction_prompts_other: "Autres prompts",
   dashboard_no_data: "Pas encore de données.",
   dashboard_other: "autres",
 

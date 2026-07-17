@@ -144,6 +144,9 @@ export default function Dashboard() {
     let turnCount = 0;
     let apiRetryCount = 0;
     let apiErrorMessageCount = 0;
+    let interruptionCount = 0;
+    const denialCounts: Record<string, number> = {};
+    const promptCounts: Record<string, number> = {};
 
     for (const s of scoped) {
       totalCost += s.estCostUSD;
@@ -198,6 +201,9 @@ export default function Dashboard() {
       turnCount += s.turnCount ?? 0;
       apiRetryCount += s.apiRetryCount ?? 0;
       apiErrorMessageCount += s.apiErrorMessageCount ?? 0;
+      interruptionCount += s.interruptionCount ?? 0;
+      mergeRecord(denialCounts, s.denialCounts ?? {});
+      mergeRecord(promptCounts, s.promptCounts ?? {});
       if (s.turnDurationByDay && Object.keys(s.turnDurationByDay).length) {
         for (const [day, ms] of Object.entries(s.turnDurationByDay)) {
           if (cutoffDay && day < cutoffDay) continue;
@@ -233,6 +239,7 @@ export default function Dashboard() {
       medianDurationMs,
       workMs, avgTurnMs: turnCount > 0 ? workMs / turnCount : 0,
       apiRetryCount, apiErrorMessageCount,
+      interruptionCount, denialCounts, promptCounts,
       cacheHitPct,
       compVolume: [inTok, outTok, crTok, ccTok],
       compCost: [costComp.input, costComp.output, costComp.cacheRead, costComp.cacheCreate],
@@ -602,6 +609,37 @@ export default function Dashboard() {
             <div className="dash-stat-row">
               <span className="dash-stat-label">{t("dashboard_reliability_errors")}</span>
               <span className="dash-stat-val">{agg.apiErrorMessageCount}</span>
+            </div>
+          </Panel>
+
+          {/* Friction */}
+          <Panel title={t("dashboard_friction_title")}>
+            <div className="dash-stat-row">
+              <span className="dash-stat-label">{t("dashboard_friction_interruptions")}</span>
+              <span className="dash-stat-val">{agg.interruptionCount}</span>
+            </div>
+            <div className="dash-stat-row">
+              <span className="dash-stat-label">{t("dashboard_friction_denials")}</span>
+              <span className="dash-stat-val"
+                title={Object.entries(agg.denialCounts).map(([k, v]) => `${k}: ${v}`).join(" · ")}>
+                {Object.values(agg.denialCounts).reduce((a, b) => a + b, 0)}
+              </span>
+            </div>
+            <div className="dash-stat-row">
+              <span className="dash-stat-label">{t("dashboard_friction_prompts_typed")}</span>
+              <span className="dash-stat-val">{agg.promptCounts.typed ?? 0}</span>
+            </div>
+            <div className="dash-stat-row">
+              <span className="dash-stat-label">{t("dashboard_friction_prompts_sdk")}</span>
+              <span className="dash-stat-val">{agg.promptCounts.sdk ?? 0}</span>
+            </div>
+            <div className="dash-stat-row">
+              <span className="dash-stat-label">{t("dashboard_friction_prompts_other")}</span>
+              <span className="dash-stat-val">
+                {Object.entries(agg.promptCounts)
+                  .filter(([k]) => k !== "typed" && k !== "sdk")
+                  .reduce((a, [, v]) => a + v, 0)}
+              </span>
             </div>
           </Panel>
 

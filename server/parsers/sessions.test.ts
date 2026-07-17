@@ -251,6 +251,66 @@ describe("buildMeta turn durations + API reliability", () => {
   });
 });
 
+describe("buildMeta friction metrics", () => {
+  let frdir: string;
+  let frfile: SessionFile;
+
+  const frlines = [
+    // Interrupted user turn: counted once.
+    { type: "user", timestamp: "2026-01-01T10:00:00Z", interruptedMessageId: "msg-1",
+      message: { role: "user", content: "wait, stop" } },
+    // Two distinct denial kinds + one repeat of the first kind.
+    { type: "user", timestamp: "2026-01-01T10:01:00Z", toolDenialKind: "user-rejected",
+      message: { role: "user", content: "no" } },
+    { type: "user", timestamp: "2026-01-01T10:02:00Z", toolDenialKind: "automode-blocked",
+      message: { role: "user", content: "no" } },
+    { type: "user", timestamp: "2026-01-01T10:03:00Z", toolDenialKind: "user-rejected",
+      message: { role: "user", content: "no" } },
+    // Prompt provenance: typed ×2, sdk ×1.
+    { type: "user", timestamp: "2026-01-01T10:04:00Z", promptSource: "typed",
+      message: { role: "user", content: "hello" } },
+    { type: "user", timestamp: "2026-01-01T10:05:00Z", promptSource: "typed",
+      message: { role: "user", content: "hello again" } },
+    { type: "user", timestamp: "2026-01-01T10:06:00Z", promptSource: "sdk",
+      message: { role: "user", content: "hello from sdk" } },
+    // Permission-mode lines (no timestamp), with consecutive duplicates.
+    { type: "permission-mode", permissionMode: "auto", sessionId: "fr1" },
+    { type: "permission-mode", permissionMode: "auto", sessionId: "fr1" },
+    { type: "permission-mode", permissionMode: "plan", sessionId: "fr1" },
+    { type: "permission-mode", permissionMode: "plan", sessionId: "fr1" },
+    { type: "permission-mode", permissionMode: "auto", sessionId: "fr1" },
+  ];
+
+  beforeAll(() => {
+    frdir = fs.mkdtempSync(path.join(os.tmpdir(), "sess-friction-"));
+    const fp = path.join(frdir, "fr1.jsonl");
+    fs.writeFileSync(fp, frlines.map((l) => JSON.stringify(l)).join("\n") + "\n");
+    const stat = fs.statSync(fp);
+    frfile = { id: "fr1", projectId: "-tmp-proj", filePath: fp, size: stat.size, mtimeMs: stat.mtimeMs };
+  });
+
+  afterAll(() => fs.rmSync(frdir, { recursive: true, force: true }));
+
+  it("counts interruptions, denials by kind, prompt sources, and permission-mode transitions", async () => {
+    const m = await buildMeta(frfile);
+    expect(m.interruptionCount).toBe(1);
+    expect(m.denialCounts).toEqual({ "user-rejected": 2, "automode-blocked": 1 });
+    expect(m.promptCounts).toEqual({ typed: 2, sdk: 1 });
+    expect([...(m.permissionModes ?? [])].sort()).toEqual(["auto", "plan"]);
+    // auto→plan, plan→auto — the initial auto is the starting mode, not a change.
+    expect(m.permissionModeChanges).toBe(2);
+  });
+
+  it("reports empty-but-present friction fields when a session has none of these lines", async () => {
+    const m = await buildMeta(file); // the main fixture at the top of this file
+    expect(m.interruptionCount).toBe(0);
+    expect(m.denialCounts).toEqual({});
+    expect(m.promptCounts).toEqual({});
+    expect(m.permissionModes).toEqual([]);
+    expect(m.permissionModeChanges).toBe(0);
+  });
+});
+
 describe("classifyMessage", () => {
   const text = (s: string): ContentBlock => ({ kind: "text", text: s });
   const toolResult = (toolUseId: string | null): ContentBlock => ({

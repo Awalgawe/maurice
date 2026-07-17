@@ -134,6 +134,14 @@ export async function buildMetaAndDocs(file: SessionFile): Promise<{ meta: Sessi
   let apiErrorMessageCount = 0;
   const turnDurationByDay: Record<string, number> = {};
   const turnDurations: number[] = []; // transient, reduced to medianTurnMs below
+  // Friction signals: user interruptions/tool denials/prompt provenance, and
+  // permission-mode transitions (those lines carry no timestamp — see below).
+  let interruptionCount = 0;
+  let permissionModeChanges = 0;
+  let lastPermissionMode: string | null = null;
+  const denialCounts: Record<string, number> = {};
+  const promptCounts: Record<string, number> = {};
+  const permissionModes = new Set<string>();
 
   for await (const obj of iterateJsonl(file.filePath)) {
     forkCollector.add(obj);
@@ -156,6 +164,27 @@ export async function buildMetaAndDocs(file: SessionFile): Promise<{ meta: Sessi
     }
     if (type === "agent-name" && typeof obj.agentName === "string" && obj.agentName.trim()) {
       agentName = obj.agentName;
+    }
+
+    if (type === "user") {
+      if (obj.interruptedMessageId) interruptionCount++;
+      if (typeof obj.toolDenialKind === "string") {
+        denialCounts[obj.toolDenialKind] = (denialCounts[obj.toolDenialKind] || 0) + 1;
+      }
+      if (typeof obj.promptSource === "string") {
+        promptCounts[obj.promptSource] = (promptCounts[obj.promptSource] || 0) + 1;
+      }
+    }
+
+    // Standalone permission-mode lines have NO timestamp and repeat per prompt
+    // — dedup consecutive repeats; the first mode seen is the starting mode,
+    // not a "change".
+    if (type === "permission-mode" && typeof obj.permissionMode === "string") {
+      if (obj.permissionMode !== lastPermissionMode) {
+        permissionModes.add(obj.permissionMode);
+        if (lastPermissionMode !== null) permissionModeChanges++;
+      }
+      lastPermissionMode = obj.permissionMode;
     }
 
     if (type === "system") {
@@ -382,6 +411,11 @@ export async function buildMetaAndDocs(file: SessionFile): Promise<{ meta: Sessi
       turnDurationByDay,
       apiRetryCount,
       apiErrorMessageCount,
+      interruptionCount,
+      denialCounts,
+      promptCounts,
+      permissionModes: [...permissionModes],
+      permissionModeChanges,
       skillTokens,
       skillCost,
       modelTokens,
