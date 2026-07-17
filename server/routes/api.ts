@@ -11,7 +11,7 @@ import { listHooks } from "../parsers/hooks.ts";
 import { buildAgentRows } from "../parsers/agents.ts";
 import { getActiveSession } from "../parsers/active.ts";
 import { listBilans, readBilan } from "../parsers/bilans.ts";
-import { sessionFilePath, PROJECTS_DIR } from "../claudeDir.ts";
+import { sessionFilePath, subagentsDir, PROJECTS_DIR } from "../claudeDir.ts";
 import { searchDocs } from "../parsers/searchIndex.ts";
 import { computeFacets } from "../facets.ts";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -220,9 +220,14 @@ api.get("/sessions/:id", async (req, res) => {
 api.get("/sessions/:id/subagents/:ref", async (req, res) => {
   const meta = await findMeta(req.params.id);
   if (!meta) return res.status(404).json({ error: "session not found" });
-  // Confine ref to a basename within the session's subagents dir (AGENTS.md).
+  // Confine ref inside the session's subagents dir (AGENTS.md). Nested
+  // workflow refs are path-shaped ("workflows/wf_x/agent-y") — they arrive
+  // %2F-encoded in the single :ref segment — so the guard is resolution-based,
+  // not a bare separator reject.
   const ref = req.params.ref;
-  if (/[/\\]/.test(ref) || ref.includes("..")) {
+  const dir = subagentsDir(meta.projectId, meta.id);
+  const resolved = path.resolve(dir, `${ref}.jsonl`);
+  if (ref.includes("\\") || !resolved.startsWith(dir + path.sep)) {
     return res.status(400).json({ error: "invalid ref" });
   }
   const detail = await readSubagentDetail(meta.projectId, meta.id, ref);
