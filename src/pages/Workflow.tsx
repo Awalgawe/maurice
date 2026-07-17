@@ -158,7 +158,7 @@ export default function Workflow() {
                           <Link to={`/sessions/${s.id}`}>{s.projectLabel}</Link>
                           <span className="muted" style={{ fontSize: 12 }}>
                             {" "}
-                            {s.firstUserPrompt}
+                            {s.aiTitle || s.firstUserPrompt}
                           </span>
                         </td>
                         {pivot === "branch" && <td />}
