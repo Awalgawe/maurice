@@ -107,6 +107,11 @@ export interface SessionMeta {
   promptCounts?: Record<string, number>;
   permissionModes?: string[];
   permissionModeChanges?: number;
+  // Hook executions by hookName ("Event" or "Event:matcher"), numbers only —
+  // command/stdout strings are deliberately NOT indexed. Optional: pre-v20.
+  hookStats?: Record<string, { fires: number; totalDurationMs: number; asyncResponses: number; errors: number }>;
+  stopHookRuns?: number;
+  hookErrorCount?: number;
   // Per-skill attribution (by attributionSkill on each assistant turn), so the
   // Workflow skill pivot doesn't double-count a session across its skills.
   skillTokens: Record<string, number>;

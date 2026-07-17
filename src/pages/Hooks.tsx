@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import type { HookEntry } from "../types";
-import { getHooks } from "../api";
+import type { HookEntry, SessionMeta } from "../types";
+import { getHooks, getSessions } from "../api";
 import { useT } from "../hooks/useT";
 import { Picker } from "../components/ui/Picker";
+import { Panel } from "../components/ui/Panel";
 
 const SCOPE_COLOR: Record<HookEntry["scope"], string> = {
   global: "var(--accent)",
@@ -34,15 +35,73 @@ interface HookGroup {
   hooks: HookEntry[];
 }
 
+interface HookUsageRow {
+  hookName: string;
+  fires: number;
+  totalDurationMs: number;
+  asyncResponses: number;
+  errors: number;
+  sessions: number;
+}
+
+/** Hook latencies are sub-second — fmtDurationMs (minutes/hours) would misrepresent them. */
+function fmtHookMs(ms: number): string {
+  if (!Number.isFinite(ms)) return "—";
+  return ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(1)} s`;
+}
+
+/** Sum fires/duration across merged hookNames matching a config entry's event
+ *  ("Event" exact, or "Event:matcher" prefix) — best-effort join, config vs. runtime. */
+function matchUsage(usage: HookUsageRow[], event: string): { fires: number; avgMs: number } | null {
+  let fires = 0;
+  let totalDurationMs = 0;
+  for (const row of usage) {
+    if (row.hookName === event || row.hookName.startsWith(event + ":")) {
+      fires += row.fires;
+      totalDurationMs += row.totalDurationMs;
+    }
+  }
+  return fires ? { fires, avgMs: totalDurationMs / fires } : null;
+}
+
+function useSessionIndex() {
+  const [sessions, setSessions] = useState<SessionMeta[]>([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    getSessions().then((s) => { setSessions(s); setLoading(false); }).catch(() => setLoading(false));
+  }, []);
+  return { sessions, loading };
+}
+
 export default function Hooks() {
   const t = useT();
   const [hooks, setHooks] = useState<HookEntry[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [scope, setScope] = useState("");
+  const { sessions } = useSessionIndex();
 
   useEffect(() => {
     getHooks().then(setHooks).catch((e) => setErr(String(e)));
   }, []);
+
+  // Merge hookStats across all sessions, keyed by hookName. Absent from
+  // config? Still shown — plugin hooks live outside settings.json.
+  const usage = useMemo<HookUsageRow[]>(() => {
+    const acc: Record<string, HookUsageRow> = {};
+    for (const s of sessions) {
+      if (!s.hookStats) continue;
+      for (const [hookName, v] of Object.entries(s.hookStats)) {
+        let row = acc[hookName];
+        if (!row) acc[hookName] = row = { hookName, fires: 0, totalDurationMs: 0, asyncResponses: 0, errors: 0, sessions: 0 };
+        row.fires += v.fires;
+        row.totalDurationMs += v.totalDurationMs;
+        row.asyncResponses += v.asyncResponses;
+        row.errors += v.errors;
+        row.sessions++;
+      }
+    }
+    return Object.values(acc).sort((a, b) => b.fires - a.fires);
+  }, [sessions]);
 
   const scopeOpts = useMemo(
     () => [
@@ -84,6 +143,14 @@ export default function Hooks() {
           <span style={{ color: "var(--muted)", fontSize: 12 }}>
             {t("hooks_matcher_label")}: {h.matcher || t("hooks_matcher_all")}
           </span>
+          {(() => {
+            const m = matchUsage(usage, h.event);
+            return m ? (
+              <span style={{ color: "var(--muted)", fontSize: 11 }}>
+                × {m.fires} · ~{fmtHookMs(m.avgMs)}
+              </span>
+            ) : null;
+          })()}
           <span style={{ flex: 1 }} />
           {h.async && (
             <span className="chip" style={{ color: "var(--accent-2)", fontSize: 11 }}>
@@ -122,6 +189,37 @@ export default function Hooks() {
 
   return (
     <div>
+      {usage.length > 0 && (
+        <Panel title={t("hooks_usage_title")}>
+          <div style={{ overflowX: "auto" }}>
+            <table>
+              <thead>
+                <tr>
+                  <th>{t("hooks_usage_col_hook")}</th>
+                  <th className="num">{t("hooks_usage_col_fires")}</th>
+                  <th className="num">{t("hooks_usage_col_avg")}</th>
+                  <th className="num">{t("hooks_usage_col_async")}</th>
+                  <th className="num">{t("hooks_usage_col_errors")}</th>
+                  <th className="num">{t("hooks_usage_col_sessions")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {usage.map((row) => (
+                  <tr key={row.hookName}>
+                    <td>{row.hookName}</td>
+                    <td className="num">{row.fires}</td>
+                    <td className="num">{row.fires ? fmtHookMs(row.totalDurationMs / row.fires) : "—"}</td>
+                    <td className="num">{row.asyncResponses}</td>
+                    <td className="num">{row.errors}</td>
+                    <td className="num">{row.sessions}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Panel>
+      )}
+
       <div className="controls">
         <Picker label={t("hooks_filter_scope")} value={scope} set={setScope} opts={scopeOpts} />
         <span style={{ color: "var(--muted)", fontSize: 13 }}>

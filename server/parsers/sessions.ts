@@ -142,6 +142,21 @@ export async function buildMetaAndDocs(file: SessionFile): Promise<{ meta: Sessi
   const denialCounts: Record<string, number> = {};
   const promptCounts: Record<string, number> = {};
   const permissionModes = new Set<string>();
+  // Hook execution stats, keyed by hookName ("Event" or "Event:matcher").
+  // hookName + numbers only — command/stdout/stderr strings are deliberately
+  // never stored here (index.json stays lean, no command lines embedded).
+  const hookStats: Record<
+    string,
+    { fires: number; totalDurationMs: number; asyncResponses: number; errors: number }
+  > = {};
+  let stopHookRuns = 0;
+  let hookErrorCount = 0;
+  const hookBucket = (hookName: unknown) => {
+    if (typeof hookName !== "string" || !hookName) return null;
+    let b = hookStats[hookName];
+    if (!b) hookStats[hookName] = b = { fires: 0, totalDurationMs: 0, asyncResponses: 0, errors: 0 };
+    return b;
+  };
 
   for await (const obj of iterateJsonl(file.filePath)) {
     forkCollector.add(obj);
@@ -201,6 +216,30 @@ export async function buildMetaAndDocs(file: SessionFile): Promise<{ meta: Sessi
         }
       } else if (obj.subtype === "api_error") {
         apiRetryCount++;
+      } else if (obj.subtype === "stop_hook_summary") {
+        stopHookRuns++;
+        if (Array.isArray(obj.hookErrors)) hookErrorCount += obj.hookErrors.length;
+      }
+    }
+
+    // Hook executions, reported as attachment lines. command/stdout/stderr are
+    // intentionally ignored — only hookName + numeric fields are kept.
+    if (type === "attachment" && obj.attachment && typeof obj.attachment === "object") {
+      const a = obj.attachment;
+      if (a.type === "hook_success") {
+        const b = hookBucket(a.hookName);
+        if (b) {
+          b.fires++;
+          const d = Number(a.durationMs);
+          b.totalDurationMs += Number.isFinite(d) ? d : 0;
+        }
+      } else if (a.type === "async_hook_response") {
+        const b = hookBucket(a.hookName);
+        if (b) b.asyncResponses++;
+      } else if (a.type === "hook_non_blocking_error") {
+        const b = hookBucket(a.hookName);
+        if (b) b.errors++;
+        hookErrorCount++;
       }
     }
 
@@ -420,6 +459,9 @@ export async function buildMetaAndDocs(file: SessionFile): Promise<{ meta: Sessi
       skillCost,
       modelTokens,
       modelCost,
+      hookStats,
+      stopHookRuns,
+      hookErrorCount,
     },
     searchDocs,
   };
