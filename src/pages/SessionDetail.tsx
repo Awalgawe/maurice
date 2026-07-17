@@ -122,6 +122,7 @@ export default function SessionDetail() {
       messages={data.messages}
       context={data.context}
       modelChanges={modelChanges}
+      compactions={data.compactions}
       subagents={data.subagents}
       estCostUSD={m.estCostUSD}
       tokens={m.tokens}
@@ -142,6 +143,8 @@ export default function SessionDetail() {
       mcpTools={m.mcpTools}
       memories={memories}
       resumeId={m.id}
+      filesTouchedCount={m.filesTouchedCount}
+      filesTouched={m.filesTouched}
     />
   );
 }

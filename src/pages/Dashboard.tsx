@@ -133,6 +133,8 @@ export default function Dashboard() {
     const projectCostAgg: Record<string, number> = {};
     const projectLabelMap: Record<string, string> = {};
     const mcpTally: Record<string, number> = {};
+    const toolCallsAgg: Record<string, number> = {};
+    const toolErrorsAgg: Record<string, number> = {};
     const dayMap: Record<string, { cost: number; sessions: number }> = {};
     const ctxBuckets = [0, 0, 0, 0]; // 0-25, 25-50, 50-75, 75-100
     const heat: number[][] = Array.from({ length: 7 }, () => new Array(24).fill(0));
@@ -166,6 +168,8 @@ export default function Dashboard() {
       projectCostAgg[s.projectId] = (projectCostAgg[s.projectId] || 0) + s.estCostUSD;
       projectLabelMap[s.projectId] = s.projectLabel;
       for (const tool of s.mcpTools) mcpTally[tool] = (mcpTally[tool] || 0) + 1;
+      mergeRecord(toolCallsAgg, s.toolCounts ?? {});
+      mergeRecord(toolErrorsAgg, s.toolErrors ?? {});
 
       const pct = s.peakContextPct;
       if (pct < 25) ctxBuckets[0]++;
@@ -244,7 +248,7 @@ export default function Dashboard() {
       compVolume: [inTok, outTok, crTok, ccTok],
       compCost: [costComp.input, costComp.output, costComp.cacheRead, costComp.cacheCreate],
       modelCostAgg, skillCostAgg, projectCostAgg, projectLabelMap,
-      mcpTally, timeline, ctxBuckets, errorRate, heat, heatMax, recentErrors,
+      mcpTally, toolCallsAgg, toolErrorsAgg, timeline, ctxBuckets, errorRate, heat, heatMax, recentErrors,
     };
   }, [scoped, range]);
 
@@ -254,6 +258,8 @@ export default function Dashboard() {
   const topSkills = agg ? sortedEntries(agg.skillCostAgg, 10) : [];
   const topProjects = agg ? sortedEntries(agg.projectCostAgg, 8) : [];
   const topMcp = agg ? sortedEntries(agg.mcpTally, 20) : [];
+  const topTools = agg ? sortedEntries(agg.toolCallsAgg, 8) : [];
+  const maxToolCalls = topTools[0]?.[1] || 1;
   const maxSkillCost = topSkills[0]?.[1] || 1;
   const maxProjectCost = topProjects[0]?.[1] || 1;
   const topSessions = [...scoped].sort((a, b) => b.estCostUSD - a.estCostUSD).slice(0, 8);
@@ -642,6 +648,27 @@ export default function Dashboard() {
               </span>
             </div>
           </Panel>
+
+          {/* Outils (tous, pas seulement MCP) */}
+          {topTools.length > 0 && (
+            <Panel title={t("dashboard_panel_tools")}>
+              {topTools.map(([name, val]) => {
+                const err = agg.toolErrorsAgg[name];
+                return (
+                  <div className="dash-bar-row" key={name}>
+                    <span className="dash-bar-label" title={name}>{name.replace(/^mcp__/, "")}</span>
+                    <div className="dash-bar-track">
+                      <div className="dash-bar-fill" style={{ width: `${(val / maxToolCalls) * 100}%` }} />
+                    </div>
+                    <span className="dash-bar-val">
+                      {val}
+                      {err ? <span className="dash-bar-err"> · {err} {t("dashboard_tools_err_suffix")}</span> : null}
+                    </span>
+                  </div>
+                );
+              })}
+            </Panel>
+          )}
 
           {/* MCP */}
           {topMcp.length > 0 && (

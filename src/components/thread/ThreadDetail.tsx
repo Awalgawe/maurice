@@ -30,6 +30,7 @@ export interface ThreadDetailProps {
   messages: ThreadMessage[];
   context: ContextPoint[];
   modelChanges?: { t: string; model: string }[];
+  compactions?: { t: string; trigger?: string }[];
   subagents: SubagentRef[]; // flat list → recursive tree
 
   estCostUSD: number;
@@ -62,6 +63,10 @@ export interface ThreadDetailProps {
   mcpTools?: string[];
   memories?: MemoryEntry[];
   resumeId?: string;
+  // Distinct files edited (file-history-snapshot union), capped list — value
+  // rendered is the count, the (possibly larger) true total.
+  filesTouchedCount?: number;
+  filesTouched?: string[];
 }
 
 /** Agnostic thread view: renders a conversation node (a session root or a
@@ -160,10 +165,18 @@ export function ThreadDetail(p: ThreadDetailProps) {
             <span className="k">{t("detail_period")}</span>
             <span className="v">{fmtDate(p.start)} → {fmtDate(p.end)}</span>
           </div>
+          {!!p.filesTouchedCount && (
+            <div className="kv">
+              <span className="k">{t("detail_files_touched")}</span>
+              <span className="v" title={(p.filesTouched ?? []).slice(0, 20).join("\n")}>
+                {p.filesTouchedCount}
+              </span>
+            </div>
+          )}
         </Panel>
 
         <Panel title={`${t("detail_ctx_panel_prefix")}${peak.toFixed(0)}%)`}>
-          <ContextChart context={p.context} modelChanges={p.modelChanges} />
+          <ContextChart context={p.context} modelChanges={p.modelChanges} compactions={p.compactions} />
         </Panel>
 
         {p.cacheRewrites && p.cacheRewrites.length > 0 && p.onRewrite && (

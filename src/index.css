@@ -627,6 +627,7 @@ tr.day-row td { background: var(--panel); color: var(--muted); font-size: 12px; 
 .dash-bar-row .dash-bar-track { flex: 1; height: 6px; background: var(--panel-2); border-radius: 3px; overflow: hidden; }
 .dash-bar-row .dash-bar-fill { height: 100%; background: var(--accent); border-radius: 3px; }
 .dash-bar-row .dash-bar-val { min-width: 74px; white-space: nowrap; text-align: right; color: var(--text); font-variant-numeric: tabular-nums; }
+.dash-bar-row .dash-bar-err { color: var(--red); font-weight: 600; }
 .dash-stack-bar-wrap { position: relative; margin-top: 1em; }
 .dash-stack-bar { display: flex; height: 2em; border-radius: 4px; overflow: hidden; border: 1px solid var(--border); background: var(--panel-2); }
 .dash-stack-tip-anchor { position: absolute; top: 0; height: 100%; }

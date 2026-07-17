@@ -17,9 +17,11 @@ import { useT } from "../hooks/useT";
 export function ContextChart({
   context,
   modelChanges = [],
+  compactions = [],
 }: {
   context: ContextPoint[];
   modelChanges?: { t: string; model: string }[];
+  compactions?: { t: string; trigger?: string }[];
 }) {
   const t = useT();
   const { fmtDate } = useFmt();
@@ -42,6 +44,20 @@ export function ContextChart({
             ]}
           />
           <ReferenceLine y={80} stroke="#fbbf24" strokeDasharray="4 4" />
+          {compactions.map((c, i) => (
+            <ReferenceLine
+              key={`compact-${c.t || i}`}
+              x={c.t}
+              stroke="#fbbf24"
+              strokeDasharray="4 3"
+              label={{
+                value: t("detail_ctx_compact_label"),
+                fill: "#fbbf24",
+                fontSize: 10,
+                position: "insideBottomRight",
+              }}
+            />
+          ))}
           {modelChanges.map((c) => (
             <ReferenceLine
               key={c.t}

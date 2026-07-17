@@ -9,7 +9,7 @@ import type { SessionMeta } from "../src/types.ts";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CACHE_DIR = path.join(__dirname, "..", ".cache");
 const CACHE_FILE = path.join(CACHE_DIR, "index.json");
-const CACHE_VERSION = 20; // 20: hook execution stats
+const CACHE_VERSION = 21; // 21: tool counts/errors, compactions, files touched
 
 interface CacheEntry {
   size: number;
