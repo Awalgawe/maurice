@@ -43,6 +43,10 @@ const lines = [
   },
   // A user turn supplies the first prompt preview.
   { type: "user", timestamp: "2026-01-01T09:59:00Z", message: { role: "user", content: "Fix the bug please" } },
+  // Generated title/name lines: repeated as the session evolves, last one wins.
+  { type: "ai-title", aiTitle: "Early title", sessionId: "s1" },
+  { type: "ai-title", aiTitle: "Fixing the bug", sessionId: "s1" },
+  { type: "agent-name", agentName: "bug-fixer", sessionId: "s1" },
 ];
 
 beforeAll(() => {
@@ -77,6 +81,12 @@ describe("buildMeta", () => {
   it("captures the first real user prompt", async () => {
     const m = await buildMeta(file);
     expect(m.firstUserPrompt).toBe("Fix the bug please");
+  });
+
+  it("keeps the last ai-title and agent-name", async () => {
+    const m = await buildMeta(file);
+    expect(m.aiTitle).toBe("Fixing the bug");
+    expect(m.agentName).toBe("bug-fixer");
   });
 
   it("attributes tokens/cost per model", async () => {
@@ -138,6 +148,12 @@ describe("buildMeta per-day cost + activity attribution", () => {
     expect(sum).toBeCloseTo(m.estCostUSD, 10);
     const heatSum = Object.values(m.activityHeat).reduce((a, b) => a + b, 0);
     expect(heatSum).toBe(m.messageCount); // 2 assistant turns
+  });
+
+  it("leaves aiTitle/agentName null when the lines are absent", async () => {
+    const m = await buildMeta(dfile);
+    expect(m.aiTitle).toBeNull();
+    expect(m.agentName).toBeNull();
   });
 });
 

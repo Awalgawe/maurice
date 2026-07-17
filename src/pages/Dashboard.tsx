@@ -467,7 +467,12 @@ export default function Dashboard() {
             {topSessions.length > 0 ? topSessions.map((s) => {
               const m = dominantModel(s);
               return (
-                <Link className="dash-toplist-row dash-link" key={s.id} to={`/sessions/${s.id}`}>
+                <Link
+                  className="dash-toplist-row dash-link"
+                  key={s.id}
+                  to={`/sessions/${s.id}`}
+                  title={s.aiTitle ?? s.firstUserPrompt ?? undefined}
+                >
                   <span className="dash-toplist-main">
                     <span className="dash-toplist-name" title={s.projectPath}>{s.projectLabel}</span>
                     <span className="dash-toplist-meta">

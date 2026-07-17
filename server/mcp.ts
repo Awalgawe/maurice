@@ -34,6 +34,7 @@ function summarize(s: SessionMeta) {
     hasErrors: s.hasErrors,
     subagentCount: s.subagentCount,
     firstUserPrompt: s.firstUserPrompt,
+    aiTitle: s.aiTitle ?? null,
   };
 }
 

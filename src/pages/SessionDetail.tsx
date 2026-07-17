@@ -110,7 +110,8 @@ export default function SessionDetail() {
     <ThreadDetail
       sessionId={m.id}
       backTo={{ url: "/sessions", label: t("detail_back") }}
-      title={m.projectPath}
+      title={m.aiTitle || m.projectPath}
+      description={m.aiTitle ? m.projectPath : undefined}
       headerChips={
         <>
           {m.ticket && <Chip variant="ticket">{m.ticket}</Chip>}

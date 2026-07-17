@@ -124,6 +124,8 @@ export async function buildMetaAndDocs(file: SessionFile): Promise<{ meta: Sessi
   let cacheRewriteCount = 0;
   let cacheRewriteWastedUSD = 0;
   let cacheRewriteWastedTokens = 0;
+  let aiTitle: string | null = null;
+  let agentName: string | null = null;
 
   for await (const obj of iterateJsonl(file.filePath)) {
     forkCollector.add(obj);
@@ -139,6 +141,14 @@ export async function buildMetaAndDocs(file: SessionFile): Promise<{ meta: Sessi
 
     const type = obj.type;
     const msg = obj.message;
+
+    // Standalone title/name lines, repeated as the session evolves — last wins.
+    if (type === "ai-title" && typeof obj.aiTitle === "string" && obj.aiTitle.trim()) {
+      aiTitle = obj.aiTitle;
+    }
+    if (type === "agent-name" && typeof obj.agentName === "string" && obj.agentName.trim()) {
+      agentName = obj.agentName;
+    }
 
     if (type === "user" || type === "assistant") {
       messageCount++;
@@ -332,6 +342,8 @@ export async function buildMetaAndDocs(file: SessionFile): Promise<{ meta: Sessi
       subagentsTokens,
       subagentsByType,
       firstUserPrompt,
+      aiTitle,
+      agentName,
       skillTokens,
       skillCost,
       modelTokens,

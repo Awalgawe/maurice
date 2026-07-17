@@ -228,7 +228,7 @@ export default function Sessions() {
                       {renderExcerpt(hitBySession.get(s.id)!.excerpt)}
                     </>
                   ) : (
-                    s.firstUserPrompt || <em>—</em>
+                    s.aiTitle || s.firstUserPrompt || <em>—</em>
                   )}
                 </div>
               </td>

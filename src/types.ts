@@ -85,6 +85,10 @@ export interface SessionMeta {
   // Optional for the same reason: absent on pre-v14 cache entries.
   subagentsByType?: Record<string, { count: number; costUSD: number; tokens: TokenTotals }>;
   firstUserPrompt: string | null; // short preview for the list
+  // Claude-generated session title / agent name (standalone "ai-title" /
+  // "agent-name" JSONL lines, last wins). Optional: absent pre-v17 cache.
+  aiTitle?: string | null;
+  agentName?: string | null;
   // Per-skill attribution (by attributionSkill on each assistant turn), so the
   // Workflow skill pivot doesn't double-count a session across its skills.
   skillTokens: Record<string, number>;
