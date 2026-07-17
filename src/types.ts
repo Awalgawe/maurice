@@ -98,6 +98,15 @@ export interface SessionMeta {
   turnDurationByDay?: Record<string, number>;
   apiRetryCount?: number;
   apiErrorMessageCount?: number;
+  // Friction signals: user interruptions (interruptedMessageId lines), tool
+  // denials by kind (toolDenialKind), prompt provenance (promptSource), and
+  // permission modes seen (consecutive repeats deduped — the lines carry no
+  // timestamp, so only transitions are countable). Optional: absent pre-v19.
+  interruptionCount?: number;
+  denialCounts?: Record<string, number>;
+  promptCounts?: Record<string, number>;
+  permissionModes?: string[];
+  permissionModeChanges?: number;
   // Per-skill attribution (by attributionSkill on each assistant turn), so the
   // Workflow skill pivot doesn't double-count a session across its skills.
   skillTokens: Record<string, number>;
