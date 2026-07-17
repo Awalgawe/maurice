@@ -1,4 +1,5 @@
 import { estimateCacheRewriteWaste } from "../pricing.ts";
+import { cacheCreationSplit } from "./jsonl.ts";
 import type { CacheRewrite } from "../../src/types.ts";
 
 // Anthropic prompt-cache TTL: a gap beyond it between two billed requests
@@ -26,6 +27,7 @@ export function createCacheRewriteDetector() {
       usage: any,
       model: string | null | undefined,
       ts: string | null | undefined,
+      missReason?: { type?: string } | null,
     ): CacheRewrite | null {
       const cacheRead = usage?.cache_read_input_tokens || 0;
       const cacheCreate = usage?.cache_creation_input_tokens || 0;
@@ -43,10 +45,19 @@ export function createCacheRewriteDetector() {
       if (rewritten < MIN_REWRITTEN_TOKENS || rewritten < lastCtx * MIN_REWRITTEN_RATIO) {
         return null;
       }
+      // diagnostics.cache_miss_reason is authoritative for a tools-changed
+      // invalidation; "previous_message_not_found" (or no diagnostics) can't
+      // tell expiry from a context edit, so the gap heuristic decides there.
+      const cause =
+        missReason?.type === "tools_changed"
+          ? "tools-changed"
+          : gapMs !== null && gapMs > CACHE_TTL_MS
+            ? "idle"
+            : "context-edit";
       return {
-        cause: gapMs !== null && gapMs > CACHE_TTL_MS ? "idle" : "context-edit",
+        cause,
         rewrittenTokens: rewritten,
-        wastedUSD: estimateCacheRewriteWaste(model, rewritten),
+        wastedUSD: estimateCacheRewriteWaste(model, rewritten, cacheCreationSplit(usage)),
         gapMs,
       };
     },

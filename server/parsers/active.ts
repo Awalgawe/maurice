@@ -2,7 +2,7 @@ import fs from "node:fs";
 import readline from "node:readline";
 import path from "node:path";
 import { PROJECTS_DIR } from "../claudeDir.ts";
-import { tokensFromUsage } from "./jsonl.ts";
+import { cacheCreationSplit, tokensFromUsage } from "./jsonl.ts";
 import { estimateCost } from "../pricing.ts";
 import type { ActiveSession, TokenTotals } from "../../src/types.ts";
 
@@ -70,7 +70,7 @@ async function parseFile(f: ActiveFile): Promise<{ tokens: TokenTotals; estCostU
         tokens.output += t.output;
         tokens.cacheRead += t.cacheRead;
         tokens.cacheCreate += t.cacheCreate;
-        estCostUSD += estimateCost(model, t);
+        estCostUSD += estimateCost(model, t, cacheCreationSplit(msg.usage));
         messageCount++;
       }
     } finally {

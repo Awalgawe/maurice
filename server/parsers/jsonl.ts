@@ -44,6 +44,24 @@ export function tokensFromUsage(usage: any): TokenTotals {
   };
 }
 
+/** Cache-write tokens split by TTL tier (usage.cache_creation). The two tiers
+ *  are billed differently (5m ≈ 1.25× input, 1h ≈ 2× input). */
+export interface CacheTierSplit {
+  m5: number;
+  h1: number;
+}
+
+/** Tier split of a usage's cache writes, or null when the log predates the
+ *  cache_creation breakdown (pricing then falls back to the flat counter). */
+export function cacheCreationSplit(usage: any): CacheTierSplit | null {
+  const cc = usage?.cache_creation;
+  if (!cc || typeof cc !== "object") return null;
+  return {
+    m5: cc.ephemeral_5m_input_tokens || 0,
+    h1: cc.ephemeral_1h_input_tokens || 0,
+  };
+}
+
 /** Context occupancy for a turn = everything fed in on the input side. */
 export function contextTokens(usage: any): number {
   if (!usage) return 0;

@@ -231,24 +231,39 @@ describe("classifyMessage", () => {
 
 describe("hasRealError", () => {
   const err = (content: any) => ({ type: "tool_result", is_error: true, content });
+  const line = (content: any[], extra: Record<string, unknown> = {}) => ({
+    type: "user",
+    message: { role: "user", content },
+    ...extra,
+  });
 
   it("flags a genuine tool failure", () => {
-    expect(hasRealError([err("Exit code 1\nboom")])).toBe(true);
+    expect(hasRealError(line([err("Exit code 1\nboom")]))).toBe(true);
   });
 
   it("does NOT flag a user interruption (string content)", () => {
-    expect(hasRealError([err("The user doesn't want to proceed with this tool use. The tool use was rejected")])).toBe(false);
+    expect(hasRealError(line([err("The user doesn't want to proceed with this tool use. The tool use was rejected")]))).toBe(false);
   });
 
   it("does NOT flag a user interruption (array content)", () => {
     expect(
-      hasRealError([err([{ type: "text", text: "The user doesn't want to proceed with this tool use." }])]),
+      hasRealError(line([err([{ type: "text", text: "The user doesn't want to proceed with this tool use." }])])),
     ).toBe(false);
   });
 
+  it("does NOT flag a structured tool denial, whatever its kind", () => {
+    for (const kind of ["user-rejected", "automode-blocked", "automode-unavailable", "permission-rule"]) {
+      expect(hasRealError(line([err("Permission denied")], { toolDenialKind: kind }))).toBe(false);
+    }
+  });
+
+  it("does NOT flag a structured interruption (interruptedMessageId)", () => {
+    expect(hasRealError(line([err("Interrupted")], { interruptedMessageId: "abc" }))).toBe(false);
+  });
+
   it("is false when no tool_result is in error", () => {
-    expect(hasRealError([{ type: "tool_result", is_error: false, content: "ok" }])).toBe(false);
-    expect(hasRealError([{ type: "text", text: "hi" }])).toBe(false);
+    expect(hasRealError(line([{ type: "tool_result", is_error: false, content: "ok" }]))).toBe(false);
+    expect(hasRealError(line([{ type: "text", text: "hi" }]))).toBe(false);
     expect(hasRealError(undefined)).toBe(false);
   });
 });
@@ -269,6 +284,9 @@ describe("buildMeta error details", () => {
     // User interruption: is_error but must NOT be recorded as a failure.
     { type: "user", timestamp: "2026-01-01T10:02:00Z",
       message: { role: "user", content: [{ type: "tool_result", tool_use_id: "tu1", is_error: true, content: "The user doesn't want to proceed with this tool use. The tool use was rejected" }] } },
+    // Structured denial (auto-mode block): is_error + toolDenialKind, excluded too.
+    { type: "user", timestamp: "2026-01-01T10:03:00Z", toolDenialKind: "automode-blocked",
+      message: { role: "user", content: [{ type: "tool_result", tool_use_id: "tu2", is_error: true, content: "Blocked by auto mode policy" }] } },
   ];
 
   beforeAll(() => {
@@ -294,5 +312,10 @@ describe("buildMeta error details", () => {
   it("does not record a user interruption as a failure", async () => {
     const m = await buildMeta(efile);
     expect(m.errors.some((e) => e.excerpt.includes("rejected"))).toBe(false);
+  });
+
+  it("does not record a structured tool denial as a failure", async () => {
+    const m = await buildMeta(efile);
+    expect(m.errors.some((e) => e.excerpt.includes("auto mode"))).toBe(false);
   });
 });

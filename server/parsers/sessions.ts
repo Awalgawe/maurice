@@ -10,6 +10,7 @@ import {
 } from "../claudeDir.ts";
 import { contextWindowFor, estimateCostByComponent } from "../pricing.ts";
 import {
+  cacheCreationSplit,
   contextTokens,
   emptyTokens,
   extractBlocks,
@@ -159,7 +160,7 @@ export async function buildMetaAndDocs(file: SessionFile): Promise<{ meta: Sessi
         tokens.output += t.output;
         tokens.cacheRead += t.cacheRead;
         tokens.cacheCreate += t.cacheCreate;
-        const turnCostByComponent = estimateCostByComponent(msg.model, t);
+        const turnCostByComponent = estimateCostByComponent(msg.model, t, cacheCreationSplit(msg.usage));
         costByComponent.input += turnCostByComponent.input;
         costByComponent.output += turnCostByComponent.output;
         costByComponent.cacheRead += turnCostByComponent.cacheRead;
@@ -191,7 +192,7 @@ export async function buildMetaAndDocs(file: SessionFile): Promise<{ meta: Sessi
         // Cache-rewrite anomalies: main-thread requests only (sidechains bill
         // on their own cache stream and would corrupt the previous-context chain).
         if (obj.isSidechain !== true) {
-          const rw = rewriteDetector.check(msg.usage, msg.model, ts);
+          const rw = rewriteDetector.check(msg.usage, msg.model, ts, msg.diagnostics?.cache_miss_reason);
           if (rw) {
             cacheRewriteCount++;
             cacheRewriteWastedUSD += rw.wastedUSD;
@@ -210,7 +211,7 @@ export async function buildMetaAndDocs(file: SessionFile): Promise<{ meta: Sessi
           if (isMcpTool(c.name || "")) mcpTools.add(c.name);
           if (c.id && c.name) toolNameById.set(c.id, c.name);
         }
-        if (c.type === "tool_result" && c.is_error === true && !isUserInterruption(c)) {
+        if (c.type === "tool_result" && c.is_error === true && !isBenignToolError(obj, c)) {
           errorCount++;
           errors.push({
             ts: ts ?? null,
@@ -411,6 +412,7 @@ async function parseTranscript(filePath: string): Promise<ParsedTranscript> {
       if (!end || ts > end) end = ts;
     }
     const msg = obj.message;
+    let turnTokens: TokenTotals | null = null;
     if (obj.type === "assistant" && msg) {
       recordToolUses(obj, toolNames);
       if (isRealModel(msg.model)) models.add(msg.model);
@@ -418,8 +420,9 @@ async function parseTranscript(filePath: string): Promise<ParsedTranscript> {
       if (key && !seenUsage.has(key)) {
         seenUsage.add(key);
         const t = tokensFromUsage(msg.usage);
+        if (msg.usage) turnTokens = t;
         addTokens(tokens, t);
-        const turnCostByComponent = estimateCostByComponent(msg.model, t);
+        const turnCostByComponent = estimateCostByComponent(msg.model, t, cacheCreationSplit(msg.usage));
         addTokens(costByComponent, turnCostByComponent);
         estCostUSD +=
           turnCostByComponent.input +
@@ -436,7 +439,7 @@ async function parseTranscript(filePath: string): Promise<ParsedTranscript> {
         // Cache-rewrite anomalies: main-thread requests only (sidechains bill
         // on their own cache stream and would corrupt the previous-context chain).
         if (obj.isSidechain !== true) {
-          const rw = rewriteDetector.check(msg.usage, msg.model, ts);
+          const rw = rewriteDetector.check(msg.usage, msg.model, ts, msg.diagnostics?.cache_miss_reason);
           if (rw) {
             cacheRewriteWastedUSD += rw.wastedUSD;
             cacheRewriteWastedTokens += rw.rewrittenTokens;
@@ -452,7 +455,7 @@ async function parseTranscript(filePath: string): Promise<ParsedTranscript> {
       }
     }
     if (!RENDERABLE.has(obj.type)) continue;
-    const tm = toThreadMessage(obj, toolNames);
+    const tm = toThreadMessage(obj, toolNames, null, turnTokens);
     if (tm.isError) errorCount++;
     messages.push(tm);
   }
@@ -485,21 +488,32 @@ interface SubagentEntry {
   parsed: ParsedTranscript;
 }
 
-/** Parse every subagent transcript of a session (flat dir). readdirSync is
- *  non-recursive, so a nested `subagents/workflows/*​/journal.jsonl` is never
- *  picked up — only the session's direct `*.jsonl` transcripts. */
+// A workflow's journal.jsonl is an event log ({type:"started"…} lines), not a
+// transcript — parsing it would add an empty phantom subagent per workflow.
+export function isSubagentTranscript(relPath: string): boolean {
+  return relPath.endsWith(".jsonl") && path.basename(relPath) !== "journal.jsonl";
+}
+
+/** Parse every subagent transcript of a session. The walk is recursive:
+ *  workflow-spawned agents nest under `workflows/<wf_id>/agent-*.jsonl`, so a
+ *  ref is the /-separated relative path without extension (flat transcripts
+ *  keep their plain basename ref). The sibling `<ref>.meta.json` convention
+ *  holds at every depth. */
 async function readSubagentEntries(projectId: string, id: string): Promise<SubagentEntry[]> {
   const dir = subagentsDir(projectId, id);
-  let files: string[];
+  let files: fs.Dirent[];
   try {
-    files = fs.readdirSync(dir);
+    files = fs.readdirSync(dir, { withFileTypes: true, recursive: true });
   } catch {
     return [];
   }
   const entries: SubagentEntry[] = [];
   for (const f of files) {
-    if (!f.endsWith(".jsonl")) continue;
-    const ref = f.replace(/\.jsonl$/, "");
+    if (!f.isFile()) continue;
+    // parentPath is absolute (recursive readdir); refs must stay dir-relative.
+    const rel = path.relative(dir, path.join(f.parentPath, f.name)).split(path.sep).join("/");
+    if (!isSubagentTranscript(rel)) continue;
+    const ref = rel.replace(/\.jsonl$/, "");
     let agentType: string | null = null;
     let description: string | null = null;
     let toolUseId: string | null = null;
@@ -513,7 +527,7 @@ async function readSubagentEntries(projectId: string, id: string): Promise<Subag
     }
     let parsed: ParsedTranscript;
     try {
-      parsed = await parseTranscript(path.join(dir, f));
+      parsed = await parseTranscript(path.join(dir, rel));
     } catch {
       continue; // unreadable transcript → skip
     }
@@ -585,8 +599,9 @@ export async function listSubagents(projectId: string, id: string): Promise<Suba
   );
 }
 
-/** Session-level aggregate: own cost/tokens of every subagent, summed flat (the
- *  dir is flat, so this equals Σ of the roots' with-descendants figures), plus
+/** Session-level aggregate: own cost/tokens of every subagent, summed flat
+ *  (each transcript counted once, so this equals Σ of the roots'
+ *  with-descendants figures), plus
  *  the same sum ventilated per agentType (missing/unset agentType groups under
  *  "(unknown)"). Powers the /agents usage view without re-parsing every
  *  subagent transcript on each request. */
@@ -647,12 +662,21 @@ export function isUserInterruption(c: any): boolean {
   return text.includes(USER_INTERRUPTION);
 }
 
+/** A denial/interruption, not a tool failure. The structured line fields
+ *  (toolDenialKind: user-rejected / automode-* / permission-rule;
+ *  interruptedMessageId) are primary; the string match keeps old logs that
+ *  predate them excluded too. */
+export function isBenignToolError(obj: any, c: any): boolean {
+  return obj?.toolDenialKind != null || obj?.interruptedMessageId != null || isUserInterruption(c);
+}
+
 /** A turn is in error only if it carries a genuine tool failure — user
- *  interruptions report is_error too but are excluded. */
-export function hasRealError(content: any): boolean {
+ *  interruptions and tool denials report is_error too but are excluded. */
+export function hasRealError(obj: any): boolean {
+  const content = obj?.message?.content;
   return (
     Array.isArray(content) &&
-    content.some((c: any) => c?.type === "tool_result" && c.is_error === true && !isUserInterruption(c))
+    content.some((c: any) => c?.type === "tool_result" && c.is_error === true && !isBenignToolError(obj, c))
   );
 }
 
@@ -682,15 +706,20 @@ function recordToolUses(obj: any, toolNames: Map<string, string>): void {
   }
 }
 
-/** Turn a raw line into a ThreadMessage (heavy: builds content blocks). */
+/** Turn a raw line into a ThreadMessage (heavy: builds content blocks).
+ *  `tokens` must come from the caller's per-request dedup: an API response
+ *  split over several lines repeats the full usage on each, so only the
+ *  request's first line carries it (like cacheRewrite) — a per-line read
+ *  would double-count parallel tool-call siblings. */
 function toThreadMessage(
   obj: any,
   toolNames: Map<string, string>,
   cacheRewrite: CacheRewrite | null = null,
+  tokens: TokenTotals | null = null,
 ): ThreadMessage {
   const msg = obj.message;
   const blocks = extractBlocks(msg);
-  const isError = hasRealError(msg?.content);
+  const isError = hasRealError(obj);
   return {
     uuid: obj.uuid ?? null,
     type: obj.type,
@@ -701,7 +730,7 @@ function toThreadMessage(
     skill: obj.attributionSkill ?? null,
     isSidechain: obj.isSidechain === true,
     isError,
-    tokens: obj.type === "assistant" && msg?.usage ? tokensFromUsage(msg.usage) : null,
+    tokens,
     cacheRewrite,
     blocks,
     fork: null, // annotated after the fork analysis (subagent threads never fork)
@@ -775,13 +804,16 @@ async function getParsedSession(meta: SessionMeta): Promise<ParsedSession> {
     lines++;
     forkCollector.add(obj);
     // Parallel tool-call siblings share the requestId: the usage dedup below
-    // also makes the rewrite flag land on the request's first message only.
+    // also makes the rewrite flag and tokens land on the request's first
+    // message only (every sibling line repeats the full usage).
     let rewrite: CacheRewrite | null = null;
+    let turnTokens: TokenTotals | null = null;
     if (obj.type === "assistant" && obj.message) {
       recordToolUses(obj, toolNames);
       const usageKey = obj.requestId || obj.message.id || obj.uuid;
       if (usageKey && !seenUsage.has(usageKey)) {
         seenUsage.add(usageKey);
+        if (obj.message.usage) turnTokens = tokensFromUsage(obj.message.usage);
         const ctx = contextTokens(obj.message.usage);
         if (ctx > 0) {
           const model = isRealModel(obj.message.model) ? obj.message.model : null;
@@ -794,12 +826,17 @@ async function getParsedSession(meta: SessionMeta): Promise<ParsedSession> {
           });
         }
         if (obj.isSidechain !== true) {
-          rewrite = rewriteDetector.check(obj.message.usage, obj.message.model, obj.timestamp);
+          rewrite = rewriteDetector.check(
+            obj.message.usage,
+            obj.message.model,
+            obj.timestamp,
+            obj.message.diagnostics?.cache_miss_reason,
+          );
         }
       }
     }
     if (!RENDERABLE.has(obj.type)) continue;
-    messages.push(toThreadMessage(obj, toolNames, rewrite));
+    messages.push(toThreadMessage(obj, toolNames, rewrite, turnTokens));
   }
 
   const analysis = forkCollector.finish();
@@ -872,7 +909,8 @@ export async function readDetail(
 /** Read one subagent transcript as a session-like detail: whole thread (small,
  *  unpaginated) + context curve + own/with-descendants cost + its direct
  *  children (so the view can recurse). Returns null if the transcript is
- *  missing. `ref` must already be basename-confined by the caller. */
+ *  missing. `ref` may be path-shaped (nested workflow agent) and must already
+ *  be confined to the subagents dir by the caller. */
 export async function readSubagentDetail(
   projectId: string,
   id: string,

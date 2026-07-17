@@ -17,6 +17,7 @@ const SESSION = "s1";
 const SESSION_CYCLE = "s2";
 const SESSION_DEEP = "s3";
 const SESSION_REWRITE = "s4";
+const SESSION_WORKFLOW = "s5";
 
 const hz = (out: number, requestId: string) => ({
   type: "assistant",
@@ -150,12 +151,26 @@ function writeSession(session: string, ag: Record<string, object[]>, mt: Record<
   const subDir = path.join(dir, "projects", PROJECT, session, "subagents");
   fs.mkdirSync(subDir, { recursive: true });
   for (const [ref, lines] of Object.entries(ag)) {
-    fs.writeFileSync(path.join(subDir, `${ref}.jsonl`), lines.map((l) => JSON.stringify(l)).join("\n") + "\n");
+    const fp = path.join(subDir, `${ref}.jsonl`);
+    fs.mkdirSync(path.dirname(fp), { recursive: true });
+    fs.writeFileSync(fp, lines.map((l) => JSON.stringify(l)).join("\n") + "\n");
   }
   for (const [ref, meta] of Object.entries(mt)) {
     fs.writeFileSync(path.join(subDir, `${ref}.meta.json`), JSON.stringify(meta));
   }
 }
+
+// Session s5: a workflow layout — one flat agent, one nested under
+// workflows/wf_1/ (with its sibling meta), and a journal.jsonl event log that
+// must NOT be parsed as a transcript.
+const workflowAgents: Record<string, object[]> = {
+  "agent-flat": [hz(10, "r-flat")],
+  "workflows/wf_1/agent-w": [hz(40, "r-w")],
+  "workflows/wf_1/journal": [{ type: "started", ts: "2026-01-01T10:00:00Z" }],
+};
+const workflowMetas: Record<string, object> = {
+  "workflows/wf_1/agent-w": { agentType: "workflow-subagent", description: "wf agent" },
+};
 
 beforeAll(async () => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), "subagents-"));
@@ -164,6 +179,7 @@ beforeAll(async () => {
   writeSession(SESSION_CYCLE, cycleAgents, cycleMetas);
   writeSession(SESSION_DEEP, deepAgents, deepMetas);
   writeSession(SESSION_REWRITE, rewriteAgents, {});
+  writeSession(SESSION_WORKFLOW, workflowAgents, workflowMetas);
   ({ listSubagents, sumSubagents, readSubagentDetail, reaggregateSubagentMeta } = await import("./sessions.ts"));
   ({ subagentsFingerprint } = await import("../claudeDir.ts"));
 });
@@ -251,6 +267,31 @@ describe("listSubagents", () => {
     fs.appendFileSync(file, JSON.stringify(hz(999, "r-grow")) + "\n");
     expect(subagentsFingerprint(PROJECT, SESSION)).not.toBe(before);
     fs.writeFileSync(file, original); // restore for order-independence
+  });
+
+  it("lists nested workflow agents with path refs and skips journal.jsonl", async () => {
+    const refs = await listSubagents(PROJECT, SESSION_WORKFLOW);
+    expect(new Set(refs.map((r) => r.ref))).toEqual(new Set(["agent-flat", "workflows/wf_1/agent-w"]));
+    const w = refs.find((r) => r.ref === "workflows/wf_1/agent-w")!;
+    expect(w.agentType).toBe("workflow-subagent"); // sibling meta resolved at depth
+    expect(w.tokens.output).toBe(40);
+  });
+
+  it("reads a nested workflow agent's detail via its path ref", async () => {
+    const d = (await readSubagentDetail(PROJECT, SESSION_WORKFLOW, "workflows/wf_1/agent-w"))!;
+    expect(d.agentType).toBe("workflow-subagent");
+    expect(d.tokens.output).toBe(40);
+  });
+
+  it("fingerprint covers nested transcripts but not journal.jsonl", () => {
+    const before = subagentsFingerprint(PROJECT, SESSION_WORKFLOW);
+    expect(before).toContain("workflows/wf_1/agent-w.jsonl");
+    expect(before).not.toContain("journal.jsonl");
+    const nested = path.join(dir, "projects", PROJECT, SESSION_WORKFLOW, "subagents", "workflows", "wf_1", "agent-w.jsonl");
+    const original = fs.readFileSync(nested);
+    fs.appendFileSync(nested, JSON.stringify(hz(999, "r-w2")) + "\n");
+    expect(subagentsFingerprint(PROJECT, SESSION_WORKFLOW)).not.toBe(before);
+    fs.writeFileSync(nested, original); // restore for order-independence
   });
 
   it("terminates on a subagent cycle without double-counting", async () => {

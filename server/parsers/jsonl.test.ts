@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { extractBlocks, stringifyToolResult } from "./jsonl.ts";
+import { cacheCreationSplit, extractBlocks, stringifyToolResult } from "./jsonl.ts";
 
 describe("extractBlocks", () => {
   it("keeps a base64 image block with its media type", () => {
@@ -61,5 +61,21 @@ describe("extractBlocks", () => {
     ]);
     expect(text).toBe("before\nafter");
     expect(text).not.toContain("HUGEBASE64");
+  });
+});
+
+describe("cacheCreationSplit", () => {
+  it("extracts the 5m/1h tier split from usage.cache_creation", () => {
+    const usage = {
+      cache_creation_input_tokens: 1000,
+      cache_creation: { ephemeral_5m_input_tokens: 300, ephemeral_1h_input_tokens: 700 },
+    };
+    expect(cacheCreationSplit(usage)).toEqual({ m5: 300, h1: 700 });
+  });
+
+  it("returns null when the log predates the breakdown", () => {
+    expect(cacheCreationSplit({ cache_creation_input_tokens: 1000 })).toBeNull();
+    expect(cacheCreationSplit(undefined)).toBeNull();
+    expect(cacheCreationSplit({})).toBeNull();
   });
 });

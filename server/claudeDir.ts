@@ -74,31 +74,34 @@ export function subagentsDir(projectId: string, id: string): string {
 
 /**
  * Stat-only fingerprint of a session's subagents dir (Σ per-transcript
- * size + mtime over the direct `*.jsonl` children). Cheap (readdir + statSync,
- * no content read). Changes whenever a transcript is added, removed or grows —
- * so cost/token aggregates keyed on it aren't served stale when a background
- * subagent finishes after the parent session file's last write. "" when there
- * is no subagents dir.
+ * size + mtime over every `*.jsonl`, recursively — workflow agents nest under
+ * `workflows/<wf_id>/`). Cheap (readdir + statSync, no content read). Changes
+ * whenever a transcript is added, removed or grows — so cost/token aggregates
+ * keyed on it aren't served stale when a background subagent finishes after
+ * the parent session file's last write. "" when there is no subagents dir.
+ * Skips journal.jsonl like the parser (an event log, not a transcript).
  */
 export function subagentsFingerprint(projectId: string, id: string): string {
   const dir = subagentsDir(projectId, id);
-  let names: string[];
+  let files: fs.Dirent[];
   try {
-    names = fs.readdirSync(dir);
+    files = fs.readdirSync(dir, { withFileTypes: true, recursive: true });
   } catch {
     return "";
   }
   const parts: string[] = [];
-  for (const name of names.sort()) {
-    if (!name.endsWith(".jsonl")) continue;
+  for (const f of files) {
+    if (!f.isFile() || !f.name.endsWith(".jsonl") || f.name === "journal.jsonl") continue;
+    const abs = path.join(f.parentPath, f.name);
+    const rel = path.relative(dir, abs).split(path.sep).join("/");
     try {
-      const s = fs.statSync(path.join(dir, name));
-      parts.push(`${name}:${s.size}:${s.mtimeMs}`);
+      const s = fs.statSync(abs);
+      parts.push(`${rel}:${s.size}:${s.mtimeMs}`);
     } catch {
       /* vanished between readdir and stat */
     }
   }
-  return parts.join("|");
+  return parts.sort().join("|");
 }
 
 /**

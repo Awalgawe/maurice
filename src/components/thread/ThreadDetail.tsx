@@ -173,11 +173,23 @@ export function ThreadDetail(p: ThreadDetailProps) {
                 <button
                   style={{ width: "100%", textAlign: "left" }}
                   onClick={() => p.onRewrite!(rw)}
-                  title={t(rw.cause === "idle" ? "message_cache_rewrite_idle" : "message_cache_rewrite_edit")}
+                  title={t(
+                    rw.cause === "idle"
+                      ? "message_cache_rewrite_idle"
+                      : rw.cause === "tools-changed"
+                        ? "message_cache_rewrite_tools"
+                        : "message_cache_rewrite_edit",
+                  )}
                 >
                   <strong>≈{fmtCost(rw.wastedUSD)}</strong>
                   <Chip variant="warn" style={{ marginLeft: 6 }}>
-                    {t(rw.cause === "idle" ? "detail_rewrite_idle" : "detail_rewrite_edit")}
+                    {t(
+                      rw.cause === "idle"
+                        ? "detail_rewrite_idle"
+                        : rw.cause === "tools-changed"
+                          ? "detail_rewrite_tools"
+                          : "detail_rewrite_edit",
+                    )}
                   </Chip>
                   <div className="muted" style={{ fontSize: 12 }}>
                     {fmtDate(rw.timestamp)} · {fmtTokens(rw.rewrittenTokens)} tokens

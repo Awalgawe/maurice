@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { contextWindowFor, estimateCost, estimateCostByComponent } from "./pricing.ts";
+import { contextWindowFor, estimateCacheRewriteWaste, estimateCost, estimateCostByComponent } from "./pricing.ts";
 
 const bundle = { input: 1_000_000, output: 1_000_000, cacheRead: 0, cacheCreate: 0 };
 
@@ -97,5 +97,54 @@ describe("estimateCostByComponent", () => {
   it("prices cacheRead far below input for the same volume", () => {
     const c = estimateCostByComponent("claude-opus-4-8", { input: 1_000_000, output: 0, cacheRead: 1_000_000, cacheCreate: 0 });
     expect(c.cacheRead).toBeLessThan(c.input);
+  });
+});
+
+describe("cache-write tier pricing (5m vs 1h)", () => {
+  const writes = { input: 0, output: 0, cacheRead: 0, cacheCreate: 1_000_000 };
+
+  it("prices an all-1h split at 2× input (Sonnet: $6/MTok)", () => {
+    const c = estimateCostByComponent("claude-sonnet-4-6", writes, { m5: 0, h1: 1_000_000 });
+    expect(c.cacheCreate).toBeCloseTo(6, 6);
+  });
+
+  it("prices a mixed split per tier", () => {
+    // Sonnet: 400k × 3.75 + 600k × 6 = 1.5 + 3.6 = 5.1 USD.
+    const c = estimateCostByComponent("claude-sonnet-4-6", writes, { m5: 400_000, h1: 600_000 });
+    expect(c.cacheCreate).toBeCloseTo(5.1, 6);
+  });
+
+  it("prices tokens beyond the split's sum at the 5m rate", () => {
+    // Split only covers 500k of the 1M written: 500k × 6 + 500k × 3.75.
+    const c = estimateCostByComponent("claude-sonnet-4-6", writes, { m5: 0, h1: 500_000 });
+    expect(c.cacheCreate).toBeCloseTo(3 + 1.875, 6);
+  });
+
+  it("without a split, keeps the legacy 5m-rate behavior", () => {
+    expect(estimateCostByComponent("claude-sonnet-4-6", writes).cacheCreate).toBeCloseTo(3.75, 6);
+    expect(estimateCost("claude-sonnet-4-6", writes)).toBeCloseTo(3.75, 6);
+  });
+
+  it("components still sum to estimateCost with a split", () => {
+    const mixed = { input: 2_000_000, output: 1_000_000, cacheRead: 5_000_000, cacheCreate: 1_000_000 };
+    const split = { m5: 250_000, h1: 750_000 };
+    const c = estimateCostByComponent("claude-opus-4-8", mixed, split);
+    expect(c.input + c.output + c.cacheRead + c.cacheCreate).toBeCloseTo(
+      estimateCost("claude-opus-4-8", mixed, split),
+      9,
+    );
+  });
+});
+
+describe("estimateCacheRewriteWaste", () => {
+  it("uses the 5m write rate when the tier split is unknown", () => {
+    // Sonnet: (3.75 − 0.3) $/MTok.
+    expect(estimateCacheRewriteWaste("claude-sonnet-4-6", 1_000_000)).toBeCloseTo(3.45, 6);
+  });
+
+  it("uses the request's tier mix when known (all-1h: 6 − 0.3)", () => {
+    expect(
+      estimateCacheRewriteWaste("claude-sonnet-4-6", 1_000_000, { m5: 0, h1: 100_000 }),
+    ).toBeCloseTo(5.7, 6);
   });
 });
