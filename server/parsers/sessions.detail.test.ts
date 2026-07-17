@@ -205,6 +205,29 @@ describe("readDetail cache-rewrite flags", () => {
   });
 });
 
+describe("readDetail compaction markers", () => {
+  const COMPACT_SESSION = "s-compact";
+
+  const compactLines = [
+    human("u1", null, "start", "2026-01-01T10:00:00Z"),
+    assistant("a1", "u1", "c1", "2026-01-01T10:00:05Z"),
+    { type: "system", subtype: "compact_boundary", timestamp: "2026-01-01T10:00:30Z",
+      compactMetadata: { trigger: "auto", preTokens: 123_456 } },
+    human("u2", "a1", "after compact", "2026-01-01T10:01:00Z"),
+    assistant("a2", "u2", "c2", "2026-01-01T10:01:05Z"),
+  ];
+
+  it("collects a compact_boundary between two billed turns with its timestamp and trigger", async () => {
+    const fp5 = sessionFilePath(PROJECT, COMPACT_SESSION);
+    fs.writeFileSync(fp5, compactLines.map((l) => JSON.stringify(l)).join("\n") + "\n");
+    const stat5 = fs.statSync(fp5);
+    const meta5 = await buildMeta({ id: COMPACT_SESSION, projectId: PROJECT, filePath: fp5, size: stat5.size, mtimeMs: stat5.mtimeMs });
+    const d = await readDetail(meta5, 0, 100);
+    expect(d!.compactions).toEqual([{ t: "2026-01-01T10:00:30Z", trigger: "auto" }]);
+    expect(meta5.compactCount).toBe(1);
+  });
+});
+
 describe("readDetail per-message token dedup", () => {
   const TOK_SESSION = "s-tokens";
 

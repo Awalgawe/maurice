@@ -376,6 +376,71 @@ describe("buildMeta hook execution stats", () => {
   });
 });
 
+describe("buildMeta tool analytics, compaction, files touched", () => {
+  let toldir: string;
+  let tolfile: SessionFile;
+
+  const tollines = [
+    // First turn: two tool_use blocks — Bash + Read.
+    { type: "assistant", timestamp: "2026-01-01T10:00:00Z",
+      message: { model: "claude-sonnet-4-6", content: [
+        { type: "tool_use", id: "tu1", name: "Bash", input: {} },
+        { type: "tool_use", id: "tu2", name: "Read", input: {} },
+      ] } },
+    // Second turn reuses Bash.
+    { type: "assistant", timestamp: "2026-01-01T10:01:00Z",
+      message: { model: "claude-sonnet-4-6", content: [
+        { type: "tool_use", id: "tu3", name: "Bash", input: {} },
+      ] } },
+    // Genuine Bash failure (tu1) — counted.
+    { type: "user", timestamp: "2026-01-01T10:00:05Z",
+      message: { role: "user", content: [
+        { type: "tool_result", tool_use_id: "tu1", is_error: true, content: "boom" },
+      ] } },
+    // Denied Bash call (tu3, toolDenialKind set) — must NOT count as a tool error.
+    { type: "user", timestamp: "2026-01-01T10:01:05Z", toolDenialKind: "user-rejected",
+      message: { role: "user", content: [
+        { type: "tool_result", tool_use_id: "tu3", is_error: true, content: "denied" },
+      ] } },
+    // One compaction.
+    { type: "system", subtype: "compact_boundary", timestamp: "2026-01-01T10:02:00Z",
+      compactMetadata: { trigger: "auto", preTokens: 123_456 } },
+    // Two file-history-snapshot lines, overlapping keys: {a.ts,b.ts} then {b.ts,c.ts}.
+    { type: "file-history-snapshot", timestamp: "2026-01-01T10:00:02Z",
+      snapshot: { trackedFileBackups: { "a.ts": {}, "b.ts": {} } } },
+    { type: "file-history-snapshot", timestamp: "2026-01-01T10:00:10Z",
+      snapshot: { trackedFileBackups: { "b.ts": {}, "c.ts": {} } } },
+  ];
+
+  beforeAll(() => {
+    toldir = fs.mkdtempSync(path.join(os.tmpdir(), "sess-tools-"));
+    const fp = path.join(toldir, "tol1.jsonl");
+    fs.writeFileSync(fp, tollines.map((l) => JSON.stringify(l)).join("\n") + "\n");
+    const stat = fs.statSync(fp);
+    tolfile = { id: "tol1", projectId: "-tmp-proj", filePath: fp, size: stat.size, mtimeMs: stat.mtimeMs };
+  });
+
+  afterAll(() => fs.rmSync(toldir, { recursive: true, force: true }));
+
+  it("tallies tool calls/errors, counts compactions, and unions touched files", async () => {
+    const m = await buildMeta(tolfile);
+    expect(m.toolCounts).toEqual({ Bash: 2, Read: 1 });
+    expect(m.toolErrors).toEqual({ Bash: 1 });
+    expect(m.compactCount).toBe(1);
+    expect(m.filesTouchedCount).toBe(3);
+    expect(m.filesTouched).toEqual(["a.ts", "b.ts", "c.ts"]);
+  });
+
+  it("reports empty-but-present fields when a session has none of these lines", async () => {
+    const m = await buildMeta(file); // the main fixture at the top of this file
+    expect(m.toolCounts).toEqual({});
+    expect(m.toolErrors).toEqual({});
+    expect(m.compactCount).toBe(0);
+    expect(m.filesTouchedCount).toBe(0);
+    expect(m.filesTouched).toEqual([]);
+  });
+});
+
 describe("classifyMessage", () => {
   const text = (s: string): ContentBlock => ({ kind: "text", text: s });
   const toolResult = (toolUseId: string | null): ContentBlock => ({

@@ -157,6 +157,17 @@ export async function buildMetaAndDocs(file: SessionFile): Promise<{ meta: Sessi
     if (!b) hookStats[hookName] = b = { fires: 0, totalDurationMs: 0, asyncResponses: 0, errors: 0 };
     return b;
   };
+  // Per-tool call/error tallies, keyed by tool name (not just mcp__*).
+  const toolCounts: Record<string, number> = {};
+  const toolErrors: Record<string, number> = {};
+  // system/compact_boundary lines (context compactions).
+  let compactCount = 0;
+  // Union of file-history-snapshot.trackedFileBackups keys across the session
+  // (files touched/edited). Array capped at 50 (insertion order); the Set keeps
+  // the true count past the cap.
+  const filesTouchedSet = new Set<string>();
+  const filesTouched: string[] = [];
+  const FILES_TOUCHED_CAP = 50;
 
   for await (const obj of iterateJsonl(file.filePath)) {
     forkCollector.add(obj);
@@ -219,6 +230,21 @@ export async function buildMetaAndDocs(file: SessionFile): Promise<{ meta: Sessi
       } else if (obj.subtype === "stop_hook_summary") {
         stopHookRuns++;
         if (Array.isArray(obj.hookErrors)) hookErrorCount += obj.hookErrors.length;
+      } else if (obj.subtype === "compact_boundary") {
+        compactCount++;
+      }
+    }
+
+    // File-history snapshots: keys of trackedFileBackups are the paths edited
+    // so far (often empty early in a session) — union across the session.
+    if (type === "file-history-snapshot" && obj.snapshot && typeof obj.snapshot === "object") {
+      const backups = obj.snapshot.trackedFileBackups;
+      if (backups && typeof backups === "object") {
+        for (const key of Object.keys(backups)) {
+          if (filesTouchedSet.has(key)) continue;
+          filesTouchedSet.add(key);
+          if (filesTouched.length < FILES_TOUCHED_CAP) filesTouched.push(key);
+        }
       }
     }
 
@@ -314,6 +340,7 @@ export async function buildMetaAndDocs(file: SessionFile): Promise<{ meta: Sessi
         if (c.type === "tool_use") {
           if (isMcpTool(c.name || "")) mcpTools.add(c.name);
           if (c.id && c.name) toolNameById.set(c.id, c.name);
+          if (typeof c.name === "string" && c.name) toolCounts[c.name] = (toolCounts[c.name] || 0) + 1;
         }
         if (c.type === "tool_result" && c.is_error === true && !isBenignToolError(obj, c)) {
           errorCount++;
@@ -323,6 +350,8 @@ export async function buildMetaAndDocs(file: SessionFile): Promise<{ meta: Sessi
             excerpt: truncate(stringifyToolResult(c.content), 140),
           });
           if (errors.length > MAX_SESSION_ERRORS) errors.shift(); // keep the most recent
+          const tn = toolNameById.get(c.tool_use_id);
+          if (tn) toolErrors[tn] = (toolErrors[tn] || 0) + 1;
         }
       }
     }
@@ -462,6 +491,11 @@ export async function buildMetaAndDocs(file: SessionFile): Promise<{ meta: Sessi
       hookStats,
       stopHookRuns,
       hookErrorCount,
+      toolCounts,
+      toolErrors,
+      compactCount,
+      filesTouchedCount: filesTouchedSet.size,
+      filesTouched,
     },
     searchDocs,
   };
@@ -875,6 +909,7 @@ interface ParsedSession {
   forkViews: Map<string, Set<string>>; // ref → renderable uuids of that view
   context: ContextPoint[];
   subagents: SubagentRef[];
+  compactions: { t: string; trigger?: string }[]; // system/compact_boundary lines
   size: number;
   mtimeMs: number;
   subagentsFp: string; // fingerprint of the subagents dir (see subagentsFingerprint)
@@ -924,11 +959,15 @@ async function getParsedSession(meta: SessionMeta): Promise<ParsedSession> {
   const toolNames = new Map<string, string>();
   const forkCollector = createForkCollector();
   const rewriteDetector = createCacheRewriteDetector();
+  const compactions: { t: string; trigger?: string }[] = [];
   let lines = 0;
 
   for await (const obj of iterateJsonl(filePath)) {
     lines++;
     forkCollector.add(obj);
+    if (obj.type === "system" && obj.subtype === "compact_boundary") {
+      compactions.push({ t: obj.timestamp ?? "", trigger: obj.compactMetadata?.trigger });
+    }
     // Parallel tool-call siblings share the requestId: the usage dedup below
     // also makes the rewrite flag and tokens land on the request's first
     // message only (every sibling line repeats the full usage).
@@ -979,6 +1018,7 @@ async function getParsedSession(meta: SessionMeta): Promise<ParsedSession> {
     forkViews,
     context,
     subagents: await listSubagents(meta.projectId, meta.id),
+    compactions,
     size,
     mtimeMs,
     subagentsFp,
@@ -1029,6 +1069,7 @@ export async function readDetail(
     forks: parsed.forks,
     cacheRewrites,
     branch: branch ?? null,
+    compactions: parsed.compactions,
   };
 }
 

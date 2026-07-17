@@ -112,6 +112,16 @@ export interface SessionMeta {
   hookStats?: Record<string, { fires: number; totalDurationMs: number; asyncResponses: number; errors: number }>;
   stopHookRuns?: number;
   hookErrorCount?: number;
+  // Per-tool call/error tallies (every tool_use, not just mcp__*). Optional: pre-v21.
+  toolCounts?: Record<string, number>;
+  toolErrors?: Record<string, number>;
+  // Context compactions (system/compact_boundary lines). Optional: pre-v21.
+  compactCount?: number;
+  // Distinct files edited (file-history-snapshot.trackedFileBackups union),
+  // array capped at 50 (insertion order); count reflects the true total.
+  // Optional: pre-v21.
+  filesTouchedCount?: number;
+  filesTouched?: string[];
   // Per-skill attribution (by attributionSkill on each assistant turn), so the
   // Workflow skill pivot doesn't double-count a session across its skills.
   skillTokens: Record<string, number>;
@@ -268,6 +278,7 @@ export interface SessionDetail {
   // aside's quick-navigation list (not limited to the current page).
   cacheRewrites: CacheRewriteRef[];
   branch: string | null; // served view: null = live thread, "f1"… = a fork
+  compactions: { t: string; trigger?: string }[]; // context compactions (system/compact_boundary)
 }
 
 export interface Facets {
