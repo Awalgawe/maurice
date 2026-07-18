@@ -1,12 +1,13 @@
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import type { SessionMeta } from "../types";
-import { getSessions } from "../api";
 import { fmtDurationMs, skillLabel, totalTokens } from "../format";
 import { useSortable } from "../hooks/useSortable";
+import { useSessions } from "../hooks/useSessions";
 import { useFmt } from "../hooks/useFmt";
 import { useT } from "../hooks/useT";
 import { SortHeader } from "../components/ui/SortHeader";
+import { ErrorState } from "../components/ui/ErrorState";
 
 type Pivot = "skill" | "ticket" | "branch";
 type SortKey = "label" | "project" | "sessions" | "tokens" | "cost" | "duration" | "errors";
@@ -25,13 +26,9 @@ interface Group {
 export default function Workflow() {
   const t = useT();
   const { fmtTokens, fmtCost } = useFmt();
-  const [sessions, setSessions] = useState<SessionMeta[]>([]);
+  const { sessions, status, error, reload } = useSessions();
   const [pivot, setPivot] = useState<Pivot>("skill");
   const { sortKey, sortDir, toggle, sortBy } = useSortable<SortKey>("cost", -1);
-
-  useEffect(() => {
-    getSessions().then(setSessions).catch(() => {});
-  }, []);
 
   const groups = useMemo(() => {
     const map = new Map<string, Group>();
@@ -97,6 +94,9 @@ export default function Workflow() {
     branch: t("workflow_pivot_branch"),
   };
   const sortProps = { active: sortKey, dir: sortDir, onSort: toggle, idle: " ↕" };
+
+  if (status === "error") return <ErrorState message={error} onRetry={reload} />;
+  if (status === "loading") return <div className="center">{t("sessions_loading")}</div>;
 
   return (
     <div>

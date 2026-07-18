@@ -12,6 +12,7 @@ import {
   beginBatch,
   endBatch,
   _resetForTesting,
+  _setDictLimitsForTesting,
 } from "./searchIndex.ts";
 
 /** Single-message session shorthand (most cases only need one doc). */
@@ -276,5 +277,28 @@ describe("searchDocs", () => {
     const hits = searchDocs("kubernetes", 10);
     expect(hits).toHaveLength(2);
     expect(new Set(hits.map((h) => h.uuid))).toEqual(new Set(["m1", "m2"]));
+  });
+});
+
+describe("spell-correction dictionary bounds", () => {
+  it("suggests a correction for a near-miss within the threshold", () => {
+    _setDictLimitsForTesting(1000, 1000);
+    upsertDoc("a", "p", "hello hello world");
+    expect(corrections("helo")).toContain("hello");
+  });
+
+  it("disables correction once the corpus exceeds the doc threshold", () => {
+    _setDictLimitsForTesting(2, 1000);
+    upsertDoc("a", "p", "hello world");
+    upsertDoc("b", "p", "hello there");
+    upsertDoc("c", "p", "hello again"); // 3 docs > 2 → correction disabled
+    expect(corrections("helo")).toEqual([]);
+  });
+
+  it("caps the distinct vocabulary held in memory", () => {
+    _setDictLimitsForTesting(1000, 1); // keep only the first distinct word
+    upsertDoc("a", "p", "alpha bravo charlie");
+    // "bravo"/"charlie" never entered the dict, so a near-miss of them yields nothing.
+    expect(corrections("bravu")).toEqual([]);
   });
 });

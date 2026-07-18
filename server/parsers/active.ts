@@ -42,12 +42,13 @@ function fingerprint(files: ActiveFile[]): string {
   return files.map((f) => `${f.filePath}:${f.stat.mtimeMs}:${f.stat.size}`).sort().join("|");
 }
 
-async function parseFile(f: ActiveFile): Promise<{ tokens: TokenTotals; estCostUSD: number; messageCount: number; startedAt: string; lastModel: string | null } | null> {
+async function parseFile(f: ActiveFile): Promise<{ tokens: TokenTotals; estCostUSD: number; messageCount: number; startedAt: string; lastModel: string | null; cwd: string | null } | null> {
   const tokens: TokenTotals = { input: 0, output: 0, cacheRead: 0, cacheCreate: 0 };
   let estCostUSD = 0;
   let startedAt = "";
   let messageCount = 0;
   let lastModel: string | null = null;
+  let cwd: string | null = null;
   const seenUsage = new Set<string>();
   try {
     const stream = fs.createReadStream(f.filePath, { encoding: "utf8" });
@@ -56,6 +57,7 @@ async function parseFile(f: ActiveFile): Promise<{ tokens: TokenTotals; estCostU
       for await (const line of rl) {
         let obj: any;
         try { obj = JSON.parse(line); } catch { continue; }
+        if (!cwd && typeof obj.cwd === "string" && obj.cwd) cwd = obj.cwd;
         if (!startedAt && obj.timestamp) startedAt = obj.timestamp;
         if (obj.type !== "assistant") continue;
         const msg = obj.message ?? obj;
@@ -80,7 +82,7 @@ async function parseFile(f: ActiveFile): Promise<{ tokens: TokenTotals; estCostU
   } catch {
     return null;
   }
-  return { tokens, estCostUSD, messageCount, startedAt, lastModel };
+  return { tokens, estCostUSD, messageCount, startedAt, lastModel, cwd };
 }
 
 export async function getActiveSession(): Promise<ActiveSession | { active: false }> {
@@ -110,8 +112,13 @@ export async function getActiveSession(): Promise<ActiveSession | { active: fals
     if (p.lastModel) lastModel = p.lastModel;
   }
 
+  // Prefer the real cwd captured in the transcript. The encoded project dir name
+  // replaces "/" with "-" and collides with real hyphens, so decoding it would
+  // invent segment boundaries ("/foo/my-project" → "/foo/my/project"). When no
+  // line carried a cwd (rare — every real transcript line has one), fall back to
+  // the raw encoded id as an opaque identifier rather than a fabricated path.
   const projectPath = files.length === 1
-    ? files[0].projectId.replace(/^-/, "").replace(/-/g, "/")
+    ? (parsed[0].cwd ?? files[0].projectId)
     : "";
 
   const result: ActiveSession = {

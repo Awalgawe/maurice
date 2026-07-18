@@ -16,7 +16,7 @@ const TYPE_COLORS: Record<string, string> = {
 function TypeBadge({ type }: { type: string }) {
   const color = TYPE_COLORS[type] ?? "var(--muted)";
   return (
-    <span className="chip" style={{ color, borderColor: color + "55" }}>
+    <span className="chip" style={{ color, borderColor: `color-mix(in srgb, ${color} 33%, transparent)` }}>
       {type}
     </span>
   );

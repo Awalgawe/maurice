@@ -24,12 +24,24 @@
   /* Sub-agents' share of cost in the cost-breakdown donut — distinct from every
      other slice color (accent, accent-2, green, amber, red) in every theme. */
   --subagent-cost: #22d3ee;
+  /* Context-chart model-change marker (distinct from --accent area + --amber compaction) */
+  --chart-model-change: #c084fc;
   /* Categorical model colors (timeline bars / legends) */
   --model-opus: #a78bfa;
   --model-sonnet: #6ea8fe;
   --model-haiku: #4ade80;
   --model-fable: #fb923c;
   --model-other: #8a91a0;
+  /* Categorical donut slices (Dashboard model breakdown) — 8 distinct, readable
+     hues per theme. Defined for every theme so no color is hardcoded in the JS. */
+  --cat-1: #6ea8fe;
+  --cat-2: #a78bfa;
+  --cat-3: #4ade80;
+  --cat-4: #fbbf24;
+  --cat-5: #f87171;
+  --cat-6: #38bdf8;
+  --cat-7: #fb923c;
+  --cat-8: #a3e635;
   --font-sans: "Inter", "Geist", "SF Pro Display", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", "SF Mono", monospace;
   --mono: var(--font-mono);
@@ -85,11 +97,21 @@
   --amber: #c98232;
   --fork: #a94fb0;
   --subagent-cost: #3f8f8a;
+  --chart-model-change: #9147c9;
   --model-opus: #7c5cd0;
   --model-sonnet: #4e6e91;
   --model-haiku: #4f8a68;
   --model-fable: #c4824b;
   --model-other: #9aa0ab;
+  /* Categorical donut slices — deepened for contrast on the cream background. */
+  --cat-1: #4a7fd6;
+  --cat-2: #8257d8;
+  --cat-3: #3f9d5f;
+  --cat-4: #d99a2b;
+  --cat-5: #d15b5b;
+  --cat-6: #2f9fb0;
+  --cat-7: #d9722e;
+  --cat-8: #7fa62e;
   --color-active: var(--accent-2);
   --accent-hover: #c4824b;
   --focus-ring-color: rgba(196, 130, 75, 0.25);
@@ -122,11 +144,21 @@
   --amber: #dea168;
   --fork: #d693e0;
   --subagent-cost: #6bc4c9;
+  --chart-model-change: #c4a0f5;
   --model-opus: #b39ddb;
   --model-sonnet: #8cafd6;
   --model-haiku: #77b98d;
   --model-fable: #dea168;
   --model-other: #b7aea3;
+  /* Categorical donut slices — brightened for the dark navy background. */
+  --cat-1: #7fb0f2;
+  --cat-2: #b79df0;
+  --cat-3: #6fd08e;
+  --cat-4: #e6b45c;
+  --cat-5: #ec8585;
+  --cat-6: #56c7d6;
+  --cat-7: #f0985a;
+  --cat-8: #b6e05f;
   --color-active: var(--accent-2);
   --accent-hover: #e6c090;
   --focus-ring-color: rgba(222, 161, 104, 0.25);
@@ -567,6 +599,39 @@ tr.day-row td { background: var(--panel); color: var(--muted); font-size: 12px; 
 }
 .tool-reminder summary { list-style: none; }
 .tool-reminder span { display: block; margin-top: 4px; color: var(--muted); white-space: pre-wrap; }
+
+.tool-result-more {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.tool-result-more .muted { color: var(--muted); }
+.tool-result-toggle {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--accent);
+  font-size: 11px;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+.tool-result-toggle:hover { border-color: var(--accent); }
+
+.async-error { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+/* Inline variant for a secondary source failing without blocking the whole page. */
+.async-error-inline { display: inline-flex; align-items: center; gap: 8px; }
+.retry-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--accent);
+  padding: 4px 12px;
+  cursor: pointer;
+}
+.retry-btn:hover { border-color: var(--accent); }
 
 .ide-file-tag {
   display: inline-flex;

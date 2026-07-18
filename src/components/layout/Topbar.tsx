@@ -18,16 +18,16 @@ export function Topbar() {
       </div>
       <div className="topbar-sep" />
       <nav className="nav">
-        <NavLink to="/" end>Dashboard</NavLink>
-        <NavLink to="/sessions">Sessions</NavLink>
-        <NavLink to="/workflow">Workflow</NavLink>
-        <NavLink to="/timeline">Timeline</NavLink>
-        <NavLink to="/memories">Memories</NavLink>
-        <NavLink to="/plans">Plans</NavLink>
-        <NavLink to="/hooks">Hooks</NavLink>
-        <NavLink to="/agents">Agents</NavLink>
-        <NavLink to="/mcp">MCP</NavLink>
-        <NavLink to="/bilans">Bilans</NavLink>
+        <NavLink to="/" end>{t("nav_dashboard")}</NavLink>
+        <NavLink to="/sessions">{t("nav_sessions")}</NavLink>
+        <NavLink to="/workflow">{t("nav_workflow")}</NavLink>
+        <NavLink to="/timeline">{t("nav_timeline")}</NavLink>
+        <NavLink to="/memories">{t("nav_memories")}</NavLink>
+        <NavLink to="/plans">{t("nav_plans")}</NavLink>
+        <NavLink to="/hooks">{t("nav_hooks")}</NavLink>
+        <NavLink to="/agents">{t("nav_agents")}</NavLink>
+        <NavLink to="/mcp">{t("nav_mcp")}</NavLink>
+        <NavLink to="/bilans">{t("nav_bilans")}</NavLink>
       </nav>
       <div className="spacer" />
       {active && (

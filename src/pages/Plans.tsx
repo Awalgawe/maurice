@@ -13,7 +13,7 @@ function ScopeBadge({ scope }: { scope: PlanEntry["scope"] }) {
   const t = useT();
   const color = scope === "global" ? "var(--accent)" : "var(--green)";
   return (
-    <span className="chip" style={{ color, borderColor: color + "55" }}>
+    <span className="chip" style={{ color, borderColor: `color-mix(in srgb, ${color} 33%, transparent)` }}>
       {scope === "global" ? t("plans_scope_global") : t("plans_scope_project")}
     </span>
   );
@@ -156,7 +156,7 @@ export default function Plans() {
           <span className="topbar-sep" />
           <span style={{ color: "var(--muted)", fontSize: 12 }}>{fmtDate(new Date(p.mtimeMs).toISOString())}</span>
           {p.ticket && (
-            <span className="chip" style={{ fontSize: 11, color: "var(--accent)", borderColor: "var(--accent)55" }}>
+            <span className="chip" style={{ fontSize: 11, color: "var(--accent)", borderColor: "color-mix(in srgb, var(--accent) 33%, transparent)" }}>
               {p.ticket}
             </span>
           )}

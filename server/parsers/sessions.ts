@@ -25,6 +25,7 @@ import type {
   CacheRewrite,
   ContentBlock,
   ContextPoint,
+  DayAgg,
   ForkInfo,
   MessageKind,
   SessionDetail,
@@ -71,6 +72,36 @@ function truncate(s: string, n = 160): string {
 const pad = (n: number) => String(n).padStart(2, "0");
 function localYmd(d: Date): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/** A zeroed per-day bucket (see DayAgg). */
+function emptyDayAgg(): DayAgg {
+  return {
+    tokens: emptyTokens(),
+    costByComponent: emptyTokens(),
+    messageCount: 0,
+    errorCount: 0,
+    turnCount: 0,
+    turnDurationMs: 0,
+    apiRetryCount: 0,
+    apiErrorMessageCount: 0,
+    interruptionCount: 0,
+    modelCost: {},
+    modelTokens: {},
+    skillCost: {},
+    skillTokens: {},
+    toolCounts: {},
+    toolErrors: {},
+    mcpTools: {},
+    denialCounts: {},
+    promptCounts: {},
+    heatByHour: {},
+  };
+}
+
+/** Add `n` to `map[key]` (in place). */
+function incr(map: Record<string, number>, key: string, n = 1): void {
+  map[key] = (map[key] || 0) + n;
 }
 
 /** Full streaming pass over one session file to build its index row + clean search text. */
@@ -160,6 +191,11 @@ export async function buildMetaAndDocs(file: SessionFile): Promise<{ meta: Sessi
   // Per-tool call/error tallies, keyed by tool name (not just mcp__*).
   const toolCounts: Record<string, number> = {};
   const toolErrors: Record<string, number> = {};
+  // Per-local-day breakdown (see DayAgg): every decomposable per-turn quantity,
+  // bucketed by the day it occurred, so the Dashboard can window its KPIs on the
+  // same period as the daily charts. Days with no timestamp contribute nowhere.
+  const byDay: Record<string, DayAgg> = {};
+  const dayBucket = (day: string): DayAgg => (byDay[day] ??= emptyDayAgg());
   // system/compact_boundary lines (context compactions).
   let compactCount = 0;
   // Union of file-history-snapshot.trackedFileBackups keys across the session
@@ -176,6 +212,8 @@ export async function buildMetaAndDocs(file: SessionFile): Promise<{ meta: Sessi
       if (!start || ts < start) start = ts;
       if (!end || ts > end) end = ts;
     }
+    // Local day of this line, for the per-day breakdown (null = no timestamp).
+    const day = ts ? localYmd(new Date(ts)) : null;
     if (obj.gitBranch) branches.add(obj.gitBranch);
     if (obj.attributionSkill) skills.add(obj.attributionSkill);
     if (obj.entrypoint) entrypoints.add(obj.entrypoint);
@@ -193,12 +231,17 @@ export async function buildMetaAndDocs(file: SessionFile): Promise<{ meta: Sessi
     }
 
     if (type === "user") {
-      if (obj.interruptedMessageId) interruptionCount++;
+      if (obj.interruptedMessageId) {
+        interruptionCount++;
+        if (day) dayBucket(day).interruptionCount++;
+      }
       if (typeof obj.toolDenialKind === "string") {
         denialCounts[obj.toolDenialKind] = (denialCounts[obj.toolDenialKind] || 0) + 1;
+        if (day) incr(dayBucket(day).denialCounts, obj.toolDenialKind);
       }
       if (typeof obj.promptSource === "string") {
         promptCounts[obj.promptSource] = (promptCounts[obj.promptSource] || 0) + 1;
+        if (day) incr(dayBucket(day).promptCounts, obj.promptSource);
       }
     }
 
@@ -220,13 +263,16 @@ export async function buildMetaAndDocs(file: SessionFile): Promise<{ meta: Sessi
           turnCount++;
           totalTurnDurationMs += durationMs;
           turnDurations.push(durationMs);
-          if (ts) {
-            const day = localYmd(new Date(ts));
+          if (day) {
             turnDurationByDay[day] = (turnDurationByDay[day] || 0) + durationMs;
+            const b = dayBucket(day);
+            b.turnCount++;
+            b.turnDurationMs += durationMs;
           }
         }
       } else if (obj.subtype === "api_error") {
         apiRetryCount++;
+        if (day) dayBucket(day).apiRetryCount++;
       } else if (obj.subtype === "stop_hook_summary") {
         stopHookRuns++;
         if (Array.isArray(obj.hookErrors)) hookErrorCount += obj.hookErrors.length;
@@ -271,17 +317,23 @@ export async function buildMetaAndDocs(file: SessionFile): Promise<{ meta: Sessi
 
     if (type === "user" || type === "assistant") {
       messageCount++;
-      if (ts) {
+      if (ts && day) {
         const d = new Date(ts);
-        activeDays.add(localYmd(d));
+        activeDays.add(day);
         const slot = ((d.getDay() + 6) % 7) * 24 + d.getHours(); // Monday-first
         activityHeat[slot] = (activityHeat[slot] || 0) + 1;
+        const b = dayBucket(day);
+        b.messageCount++;
+        incr(b.heatByHour, String(d.getHours())); // dow is implied by the date
       }
     }
 
     if (type === "assistant" && msg) {
       if (isRealModel(msg.model)) models.add(msg.model);
-      if (obj.isApiErrorMessage === true) apiErrorMessageCount++;
+      if (obj.isApiErrorMessage === true) {
+        apiErrorMessageCount++;
+        if (day) dayBucket(day).apiErrorMessageCount++;
+      }
       const key = obj.requestId || msg.id || obj.uuid;
       if (key && !seenUsage.has(key)) {
         seenUsage.add(key);
@@ -301,20 +353,32 @@ export async function buildMetaAndDocs(file: SessionFile): Promise<{ meta: Sessi
           turnCostByComponent.cacheRead +
           turnCostByComponent.cacheCreate;
         estCostUSD += turnCost;
-        // Attribute this turn's cost to its own local day (per-message bucketing).
-        if (ts) {
-          const day = localYmd(new Date(ts));
-          costByDay[day] = (costByDay[day] || 0) + turnCost;
-        }
         // Attribute this turn's tokens/cost to the skill active on this line.
         const sk = obj.attributionSkill || "(aucun)";
-        skillTokens[sk] = (skillTokens[sk] || 0) + (t.input + t.output + t.cacheRead + t.cacheCreate);
+        const turnTokens = t.input + t.output + t.cacheRead + t.cacheCreate;
+        skillTokens[sk] = (skillTokens[sk] || 0) + turnTokens;
         skillCost[sk] = (skillCost[sk] || 0) + turnCost;
         // Attribute to the model that produced this turn (pseudo-models → unknown).
         const mk = isRealModel(msg.model) ? msg.model : "(inconnu)";
-        const turnTokens = t.input + t.output + t.cacheRead + t.cacheCreate;
         modelTokens[mk] = (modelTokens[mk] || 0) + turnTokens;
         modelCost[mk] = (modelCost[mk] || 0) + turnCost;
+        // Per-day mirror of this turn's tokens/cost/model/skill attribution.
+        if (day) {
+          costByDay[day] = (costByDay[day] || 0) + turnCost;
+          const b = dayBucket(day);
+          b.tokens.input += t.input;
+          b.tokens.output += t.output;
+          b.tokens.cacheRead += t.cacheRead;
+          b.tokens.cacheCreate += t.cacheCreate;
+          b.costByComponent.input += turnCostByComponent.input;
+          b.costByComponent.output += turnCostByComponent.output;
+          b.costByComponent.cacheRead += turnCostByComponent.cacheRead;
+          b.costByComponent.cacheCreate += turnCostByComponent.cacheCreate;
+          incr(b.skillTokens, sk, turnTokens);
+          incr(b.skillCost, sk, turnCost);
+          incr(b.modelTokens, mk, turnTokens);
+          incr(b.modelCost, mk, turnCost);
+        }
         const ctx = contextTokens(msg.usage);
         if (ctx > peakContextTokens) peakContextTokens = ctx;
         const ctxPct = (ctx / contextWindowFor(msg.model)) * 100;
@@ -338,12 +402,19 @@ export async function buildMetaAndDocs(file: SessionFile): Promise<{ meta: Sessi
       for (const c of content) {
         if (!c || typeof c !== "object") continue;
         if (c.type === "tool_use") {
-          if (isMcpTool(c.name || "")) mcpTools.add(c.name);
+          if (isMcpTool(c.name || "")) {
+            mcpTools.add(c.name);
+            if (day) incr(dayBucket(day).mcpTools, c.name);
+          }
           if (c.id && c.name) toolNameById.set(c.id, c.name);
-          if (typeof c.name === "string" && c.name) toolCounts[c.name] = (toolCounts[c.name] || 0) + 1;
+          if (typeof c.name === "string" && c.name) {
+            toolCounts[c.name] = (toolCounts[c.name] || 0) + 1;
+            if (day) incr(dayBucket(day).toolCounts, c.name);
+          }
         }
         if (c.type === "tool_result" && c.is_error === true && !isBenignToolError(obj, c)) {
           errorCount++;
+          if (day) dayBucket(day).errorCount++;
           errors.push({
             ts: ts ?? null,
             tool: toolNameById.get(c.tool_use_id) || "tool",
@@ -351,7 +422,10 @@ export async function buildMetaAndDocs(file: SessionFile): Promise<{ meta: Sessi
           });
           if (errors.length > MAX_SESSION_ERRORS) errors.shift(); // keep the most recent
           const tn = toolNameById.get(c.tool_use_id);
-          if (tn) toolErrors[tn] = (toolErrors[tn] || 0) + 1;
+          if (tn) {
+            toolErrors[tn] = (toolErrors[tn] || 0) + 1;
+            if (day) incr(dayBucket(day).toolErrors, tn);
+          }
         }
       }
     }
@@ -496,6 +570,7 @@ export async function buildMetaAndDocs(file: SessionFile): Promise<{ meta: Sessi
       compactCount,
       filesTouchedCount: filesTouchedSet.size,
       filesTouched,
+      byDay,
     },
     searchDocs,
   };
@@ -915,11 +990,29 @@ interface ParsedSession {
   subagentsFp: string; // fingerprint of the subagents dir (see subagentsFingerprint)
 }
 
-// LRU of recently-viewed sessions. Bounded so memory stays reasonable; the
-// heavy work (stream + JSON.parse + block extraction) happens once per file
-// version, then pagination is a plain in-memory slice.
+// LRU of recently-viewed sessions. Bounded by an approximate memory budget (not
+// a fixed entry count): a session's weight is its source-file size, which tracks
+// the parsed footprint including any embedded base64 images — so a handful of
+// image-heavy transcripts can't pin hundreds of MB the way a 12-entry cap did.
 const parsedCache = new Map<string, ParsedSession>();
-const PARSED_CACHE_MAX = 12;
+const PARSED_CACHE_MAX_BYTES = 200 * 1024 * 1024; // ~200 MB of source-file weight
+
+/** Evict least-recently-used entries (Map insertion order) until the summed
+ *  `size` weight fits the budget, always keeping at least `minEntries` (so the
+ *  just-inserted session survives even if it alone exceeds the budget). */
+export function evictToByteBudget<T extends { size: number }>(
+  cache: Map<string, T>,
+  maxBytes: number,
+  minEntries = 1,
+): void {
+  let total = 0;
+  for (const v of cache.values()) total += v.size;
+  while (cache.size > minEntries && total > maxBytes) {
+    const oldest = cache.keys().next().value as string;
+    total -= cache.get(oldest)!.size;
+    cache.delete(oldest);
+  }
+}
 
 /**
  * Parse a whole session into renderable messages + context curve, cached by
@@ -936,7 +1029,8 @@ async function getParsedSession(meta: SessionMeta): Promise<ParsedSession> {
     size = stat.size;
     mtimeMs = stat.mtimeMs;
   } catch {
-    /* file may have vanished; fall through and parse (will yield nothing) */
+    /* file may have vanished; fall through — iterateJsonl swallows ENOENT and
+       yields nothing, so this parses as an empty session rather than throwing */
   }
 
   // Subagent transcripts live in a sibling dir; their changes don't touch the
@@ -1024,10 +1118,7 @@ async function getParsedSession(meta: SessionMeta): Promise<ParsedSession> {
     subagentsFp,
   };
   parsedCache.set(key, parsed);
-  while (parsedCache.size > PARSED_CACHE_MAX) {
-    const oldest = parsedCache.keys().next().value as string;
-    parsedCache.delete(oldest);
-  }
+  evictToByteBudget(parsedCache, PARSED_CACHE_MAX_BYTES);
   if (PERF) console.log(`[perf] getParsedSession ${meta.id} parsed ${lines} lines → ${messages.length} msgs in ${Date.now() - t0}ms`);
   return parsed;
 }

@@ -23,9 +23,14 @@ const LangContext = createContext<LangContextValue>({
 });
 
 export function LangProvider({ children }: { children: React.ReactNode }) {
-  const [langPref, setLangPref] = useState<Lang | null>(
-    () => localStorage.getItem(STORAGE_KEY) as Lang | null
-  );
+  const [langPref, setLangPref] = useState<Lang | null>(() => {
+    // Validate the stored value: a stale/unknown code would otherwise make
+    // translations[lang] undefined and crash useT on the first lookup.
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored && SUPPORTED_LANGS.includes(stored as Lang)) return stored as Lang;
+    if (stored) localStorage.removeItem(STORAGE_KEY);
+    return null;
+  });
 
   const lang = langPref ?? detectBrowserLang();
 

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { buildMeta, classifyMessage, hasRealError } from "./sessions.ts";
+import { buildMeta, classifyMessage, hasRealError, evictToByteBudget } from "./sessions.ts";
 import type { SessionFile } from "../claudeDir.ts";
 import type { ContentBlock } from "../../src/types.ts";
 
@@ -571,5 +571,57 @@ describe("buildMeta error details", () => {
   it("does not record a structured tool denial as a failure", async () => {
     const m = await buildMeta(efile);
     expect(m.errors.some((e) => e.excerpt.includes("auto mode"))).toBe(false);
+  });
+});
+
+describe("evictToByteBudget", () => {
+  const mk = (sizes: Record<string, number>) => new Map(Object.entries(sizes).map(([k, size]) => [k, { size }]));
+
+  it("evicts least-recently-used entries until the byte budget is met", () => {
+    const cache = mk({ a: 30, b: 30, c: 30 }); // insertion order = LRU order
+    evictToByteBudget(cache, 70);
+    // 90 > 70 → drop oldest 'a' (60 ≤ 70, stop)
+    expect([...cache.keys()]).toEqual(["b", "c"]);
+  });
+
+  it("counts weight by size, not entry count", () => {
+    const cache = mk({ small1: 1, small2: 1, huge: 500 });
+    evictToByteBudget(cache, 100);
+    // total 502 > 100 → drop small1 (501), small2 (500), still > 100 but only
+    // 'huge' left and minEntries=1 keeps it.
+    expect([...cache.keys()]).toEqual(["huge"]);
+  });
+
+  it("keeps at least minEntries even when the newest alone exceeds the budget", () => {
+    const cache = mk({ old: 10, newest: 999 });
+    evictToByteBudget(cache, 50, 1);
+    expect([...cache.keys()]).toEqual(["newest"]);
+  });
+
+  it("is a no-op when already within budget", () => {
+    const cache = mk({ a: 10, b: 10 });
+    evictToByteBudget(cache, 1000);
+    expect([...cache.keys()]).toEqual(["a", "b"]);
+  });
+});
+
+describe("buildMeta per-day (byDay) conservation", () => {
+  it("byDay sums reproduce the session-level tokens, cost, and skill attribution", async () => {
+    const m = await buildMeta(file);
+    expect(m.byDay).toBeTruthy();
+    const sumTok = { input: 0, output: 0, cacheRead: 0, cacheCreate: 0 };
+    let sumCost = 0;
+    const sumSkillCost: Record<string, number> = {};
+    for (const agg of Object.values(m.byDay!)) {
+      sumTok.input += agg.tokens.input;
+      sumTok.output += agg.tokens.output;
+      sumTok.cacheRead += agg.tokens.cacheRead;
+      sumTok.cacheCreate += agg.tokens.cacheCreate;
+      sumCost += agg.costByComponent.input + agg.costByComponent.output + agg.costByComponent.cacheRead + agg.costByComponent.cacheCreate;
+      for (const [k, v] of Object.entries(agg.skillCost)) sumSkillCost[k] = (sumSkillCost[k] || 0) + v;
+    }
+    expect(sumTok).toEqual(m.tokens); // per-day mirror of the deduped usage
+    expect(sumCost).toBeCloseTo(m.estCostUSD, 10);
+    for (const [k, v] of Object.entries(m.skillCost)) expect(sumSkillCost[k]).toBeCloseTo(v, 10);
   });
 });

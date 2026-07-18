@@ -129,6 +129,39 @@ export interface SessionMeta {
   // Per-model attribution (mirrors skillCost but keyed on msg.model).
   modelTokens: Record<string, number>;
   modelCost: Record<string, number>;
+  // Per-local-day breakdown of every decomposable per-turn quantity, so the
+  // Dashboard can re-aggregate its windowable KPIs on the same daily period as
+  // the time charts — instead of summing full-session totals for a session whose
+  // last activity merely lands in the window. Session-level scalars that don't
+  // decompose by day (the context-peak distribution, session wall-clock
+  // duration) are deliberately absent; the Dashboard keeps those over sessions
+  // active in the window. Optional: absent pre-v22 cache. Invariant: summing
+  // byDay reproduces the session-level totals (tokens, costByComponent, counts,
+  // per-key maps).
+  byDay?: Record<string, DayAgg>;
+}
+
+/** One local day's slice of a session's decomposable per-turn quantities. */
+export interface DayAgg {
+  tokens: TokenTotals;
+  costByComponent: TokenTotals; // USD per component; day's total cost = sum of the four
+  messageCount: number;
+  errorCount: number;
+  turnCount: number;
+  turnDurationMs: number;
+  apiRetryCount: number;
+  apiErrorMessageCount: number;
+  interruptionCount: number;
+  modelCost: Record<string, number>;
+  modelTokens: Record<string, number>;
+  skillCost: Record<string, number>;
+  skillTokens: Record<string, number>;
+  toolCounts: Record<string, number>;
+  toolErrors: Record<string, number>;
+  mcpTools: Record<string, number>; // tool_use count per mcp tool
+  denialCounts: Record<string, number>;
+  promptCounts: Record<string, number>;
+  heatByHour: Record<string, number>; // local hour (0-23) → message count; dow implied by the date
 }
 
 /**

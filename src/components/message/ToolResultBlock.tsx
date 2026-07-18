@@ -1,14 +1,21 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import type { ContentBlock } from "../../types";
 import { useT } from "../../hooks/useT";
 import { ansiToHtml } from "../../lib/ansi";
 import { highlightCode } from "../../lib/highlight";
 
+// Long outputs are collapsed to a preview so a huge tool_result doesn't blow up
+// the thread — but the full text is always reachable via the toggle, never
+// silently dropped. Highlighting/ANSI runs on the sliced text (not the rendered
+// HTML) so a collapse can't cut through a tag.
+const PREVIEW_LEN = 4000;
+
 /** Tool result: peels off a leading system-reminder, highlights JSON, else ANSI. */
 export function ToolResultBlock({ b }: { b: Extract<ContentBlock, { kind: "tool_result" }> }) {
   const t = useT();
+  const [expanded, setExpanded] = useState(false);
   const { reminder, body, isJson } = useMemo(() => {
-    const raw = b.text.slice(0, 4000);
+    const raw = b.text;
     const srMatch = raw.match(/^<system-reminder>([\s\S]*?)<\/system-reminder>\n?/);
     const rem = srMatch?.[1]?.trim() ?? null;
     const bd = srMatch ? raw.slice(srMatch[0].length) : raw;
@@ -17,10 +24,13 @@ export function ToolResultBlock({ b }: { b: Extract<ContentBlock, { kind: "tool_
     return { reminder: rem, body: bd, isJson: json };
   }, [b.text, b.isError]);
 
+  const truncated = body.length > PREVIEW_LEN;
+  const shown = expanded || !truncated ? body : body.slice(0, PREVIEW_LEN);
+
   const bodyNode = useMemo(() => {
-    if (!body) return null;
+    if (!shown) return null;
     if (isJson) {
-      const html = highlightCode(body, "json");
+      const html = highlightCode(shown, "json");
       if (html) {
         return (
           <pre className="json-view">
@@ -29,8 +39,8 @@ export function ToolResultBlock({ b }: { b: Extract<ContentBlock, { kind: "tool_
         );
       }
     }
-    return <span dangerouslySetInnerHTML={{ __html: ansiToHtml(body) }} />;
-  }, [body, isJson]);
+    return <span dangerouslySetInnerHTML={{ __html: ansiToHtml(shown) }} />;
+  }, [shown, isJson]);
 
   const hasImages = b.images.length > 0;
 
@@ -45,6 +55,14 @@ export function ToolResultBlock({ b }: { b: Extract<ContentBlock, { kind: "tool_
         )}
         {bodyNode ??
           (!reminder && !hasImages && <span className="muted">{t("tool_result_empty")}</span>)}
+        {truncated && (
+          <div className="tool-result-more">
+            {!expanded && <span className="muted">{t("tool_result_truncated")}</span>}
+            <button type="button" className="tool-result-toggle" onClick={() => setExpanded((v) => !v)}>
+              {expanded ? t("tool_result_collapse") : t("tool_result_show_all")}
+            </button>
+          </div>
+        )}
       </div>
       {hasImages && (
         <div className="block image tool-result-images">

@@ -1,17 +1,28 @@
 import React, { createContext, useContext, useState } from "react";
+import type { I18nKey } from "../i18n/index";
+import type { TFunc } from "../hooks/useT";
 
 export interface EditorDef {
   id: string;
   label: string;
+  /** i18n key overriding `label` when the name is translatable (not a brand). */
+  labelKey?: I18nKey;
   /** null = use server-side /api/open (OS default) */
   url: ((path: string) => string) | null;
 }
 
+/** Display name for an editor: the translated label when it's translatable
+ *  (the OS default), the brand name otherwise. Shared by every consumer so no
+ *  one renders the raw `label` or hardcodes an "Open in …" title. */
+export function editorLabel(editor: EditorDef, t: TFunc): string {
+  return editor.labelKey ? t(editor.labelKey) : editor.label;
+}
+
 export const EDITORS: EditorDef[] = [
-  { id: "os",      label: "Défaut OS", url: null },
-  { id: "vscode",  label: "VS Code",   url: (p) => `vscode://file/${p}` },
-  { id: "cursor",  label: "Cursor",    url: (p) => `cursor://file/${p}` },
-  { id: "zed",     label: "Zed",       url: (p) => `zed://file/${p}` },
+  { id: "os",      label: "OS",      labelKey: "editor_os_default", url: null },
+  { id: "vscode",  label: "VS Code", url: (p) => `vscode://file/${p}` },
+  { id: "cursor",  label: "Cursor",  url: (p) => `cursor://file/${p}` },
+  { id: "zed",     label: "Zed",     url: (p) => `zed://file/${p}` },
 ];
 
 const STORAGE_KEY = "claude-sessions:editor";

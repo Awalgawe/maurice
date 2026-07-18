@@ -15,19 +15,18 @@ import {
   YAxis,
 } from "recharts";
 import type { SessionMeta } from "../types";
-import { getSessions } from "../api";
 import { colorForModel, dominantModel, fmtDurationMs, modelLabel, skillLabel, totalTokens } from "../format";
 import { useFmt } from "../hooks/useFmt";
 import { useT } from "../hooks/useT";
+import { useSessions } from "../hooks/useSessions";
+import { windowSession } from "../lib/windowedAgg";
 import { useLang } from "../state/LangContext";
 import { Chip } from "../components/ui/Chip";
 import { Panel } from "../components/ui/Panel";
+import { ErrorState } from "../components/ui/ErrorState";
 
-// Palette for the donut chart slices.
-const SLICE_COLORS = [
-  "#6ea8fe", "#a78bfa", "#4ade80", "#fbbf24",
-  "#f87171", "#38bdf8", "#fb923c", "#a3e635",
-];
+// Donut slice palette — themed categorical tokens (defined per theme in index.css).
+const SLICE_COLORS = Array.from({ length: 8 }, (_, i) => `var(--cat-${i + 1})`);
 
 const DAY = 86_400_000;
 const RANGE_KEY = "maurice.dashboard.range";
@@ -45,15 +44,6 @@ const COMPONENTS = [
   { key: "cacheCreate", labelKey: "dashboard_tok_cache_create", color: "var(--amber)" },
 ] as const;
 
-function useSessionIndex() {
-  const [sessions, setSessions] = useState<SessionMeta[]>([]);
-  const [loading, setLoading] = useState(true);
-  useEffect(() => {
-    getSessions().then((s) => { setSessions(s); setLoading(false); }).catch(() => setLoading(false));
-  }, []);
-  return { sessions, loading };
-}
-
 /** Merge record maps: sum numeric values key by key. */
 function mergeRecord(acc: Record<string, number>, src: Record<string, number>) {
   for (const [k, v] of Object.entries(src)) acc[k] = (acc[k] || 0) + v;
@@ -70,7 +60,7 @@ export default function Dashboard() {
   const t = useT();
   const { lang } = useLang();
   const { fmtCost, fmtTokens, fmtDate, fmtDay, fmtAgo } = useFmt();
-  const { sessions, loading } = useSessionIndex();
+  const { sessions, status, error, reload } = useSessions();
 
   // Period filter, persisted (mirrors ThemeContext/LangContext/EditorContext).
   const [range, setRange] = useState<number | null>(() => {
@@ -149,28 +139,39 @@ export default function Dashboard() {
     let interruptionCount = 0;
     const denialCounts: Record<string, number> = {};
     const promptCounts: Record<string, number> = {};
+    // Per-session windowed cost/tokens/errors, so error rate and the top-sessions
+    // list describe the selected period — not the sessions' full-lifetime totals.
+    const perSession: { s: SessionMeta; cost: number; tokens: number; errors: number }[] = [];
 
     for (const s of scoped) {
-      totalCost += s.estCostUSD;
-      totalTok += totalTokens(s.tokens);
-      totalErrors += s.errorCount;
-      for (const e of s.errors ?? [])
+      // Decomposable KPIs are summed over the days within the window (byDay), so
+      // a session whose last activity merely lands in the window doesn't drag in
+      // its pre-window cost/tokens/activity. When byDay is absent (should not
+      // happen post-v22 reparse), windowSession returns zeros for that session.
+      const w = windowSession(s.byDay, cutoffDay);
+      totalCost += w.cost;
+      totalTok += totalTokens(w.tokens);
+      totalErrors += w.errorCount;
+      perSession.push({ s, cost: w.cost, tokens: totalTokens(w.tokens), errors: w.errorCount });
+      for (const e of s.errors ?? []) {
+        if (cutoffDay && e.ts && ymd(new Date(e.ts)) < cutoffDay) continue;
         allErrors.push({ ...e, sessionId: s.id, projectLabel: s.projectLabel });
-      inTok += s.tokens.input; outTok += s.tokens.output;
-      crTok += s.tokens.cacheRead; ccTok += s.tokens.cacheCreate;
-      const cc = s.costByComponent;
-      if (cc) {
-        costComp.input += cc.input; costComp.output += cc.output;
-        costComp.cacheRead += cc.cacheRead; costComp.cacheCreate += cc.cacheCreate;
       }
-      mergeRecord(modelCostAgg, s.modelCost);
-      mergeRecord(skillCostAgg, s.skillCost);
-      projectCostAgg[s.projectId] = (projectCostAgg[s.projectId] || 0) + s.estCostUSD;
+      inTok += w.tokens.input; outTok += w.tokens.output;
+      crTok += w.tokens.cacheRead; ccTok += w.tokens.cacheCreate;
+      costComp.input += w.costByComponent.input; costComp.output += w.costByComponent.output;
+      costComp.cacheRead += w.costByComponent.cacheRead; costComp.cacheCreate += w.costByComponent.cacheCreate;
+      mergeRecord(modelCostAgg, w.modelCost);
+      mergeRecord(skillCostAgg, w.skillCost);
+      projectCostAgg[s.projectId] = (projectCostAgg[s.projectId] || 0) + w.cost;
       projectLabelMap[s.projectId] = s.projectLabel;
-      for (const tool of s.mcpTools) mcpTally[tool] = (mcpTally[tool] || 0) + 1;
-      mergeRecord(toolCallsAgg, s.toolCounts ?? {});
-      mergeRecord(toolErrorsAgg, s.toolErrors ?? {});
+      // Session-presence per MCP tool (used at least once within the window).
+      for (const tool of Object.keys(w.mcpTools)) mcpTally[tool] = (mcpTally[tool] || 0) + 1;
+      mergeRecord(toolCallsAgg, w.toolCounts);
+      mergeRecord(toolErrorsAgg, w.toolErrors);
 
+      // Context-peak distribution and session duration don't decompose by day —
+      // they are session properties, kept over the sessions active in the window.
       const pct = s.peakContextPct;
       if (pct < 25) ctxBuckets[0]++;
       else if (pct < 50) ctxBuckets[1]++;
@@ -192,8 +193,8 @@ export default function Dashboard() {
         dayMap[day] = d;
       }
 
-      // Heatmap: message volume per (day-of-week × hour), local.
-      for (const [slot, count] of Object.entries(s.activityHeat ?? {})) {
+      // Heatmap: message volume per (day-of-week × hour), local — windowed.
+      for (const [slot, count] of Object.entries(w.heat)) {
         const n = Number(slot);
         heat[Math.floor(n / 24)][n % 24] += count;
       }
@@ -202,20 +203,13 @@ export default function Dashboard() {
         if (dur > 0) durations.push(dur);
       }
 
-      turnCount += s.turnCount ?? 0;
-      apiRetryCount += s.apiRetryCount ?? 0;
-      apiErrorMessageCount += s.apiErrorMessageCount ?? 0;
-      interruptionCount += s.interruptionCount ?? 0;
-      mergeRecord(denialCounts, s.denialCounts ?? {});
-      mergeRecord(promptCounts, s.promptCounts ?? {});
-      if (s.turnDurationByDay && Object.keys(s.turnDurationByDay).length) {
-        for (const [day, ms] of Object.entries(s.turnDurationByDay)) {
-          if (cutoffDay && day < cutoffDay) continue;
-          workMs += ms;
-        }
-      } else {
-        workMs += s.totalTurnDurationMs ?? 0;
-      }
+      turnCount += w.turnCount;
+      apiRetryCount += w.apiRetryCount;
+      apiErrorMessageCount += w.apiErrorMessageCount;
+      interruptionCount += w.interruptionCount;
+      mergeRecord(denialCounts, w.denialCounts);
+      mergeRecord(promptCounts, w.promptCounts);
+      workMs += w.turnDurationMs;
     }
 
     const timeline = Object.entries(dayMap)
@@ -223,7 +217,13 @@ export default function Dashboard() {
       .map(([date, v]) => ({ date, ...v }));
 
     const n = scoped.length;
-    const errorRate = ((scoped.filter((s) => s.hasErrors).length / n) * 100).toFixed(1);
+    // Windowed: a session counts as errored only if it errored within the period.
+    const errorRate = ((perSession.filter((p) => p.errors > 0).length / n) * 100).toFixed(1);
+    // Costliest sessions ranked and displayed on their in-window cost/tokens, so a
+    // session mostly spent before the window doesn't outrank one spent within it.
+    const topSessions = [...perSession]
+      .sort((a, b) => b.cost - a.cost)
+      .slice(0, 8);
     const recentErrors = allErrors
       .sort((a, b) => (b.ts ?? "").localeCompare(a.ts ?? ""))
       .slice(0, 5);
@@ -249,10 +249,12 @@ export default function Dashboard() {
       compCost: [costComp.input, costComp.output, costComp.cacheRead, costComp.cacheCreate],
       modelCostAgg, skillCostAgg, projectCostAgg, projectLabelMap,
       mcpTally, toolCallsAgg, toolErrorsAgg, timeline, ctxBuckets, errorRate, heat, heatMax, recentErrors,
+      topSessions,
     };
   }, [scoped, range]);
 
-  if (loading) return <div className="center">{t("sessions_loading")}</div>;
+  if (status === "error") return <ErrorState message={error} onRetry={reload} />;
+  if (status === "loading") return <div className="center">{t("sessions_loading")}</div>;
 
   const topModels = agg ? sortedEntries(agg.modelCostAgg, 8) : [];
   const topSkills = agg ? sortedEntries(agg.skillCostAgg, 10) : [];
@@ -262,7 +264,7 @@ export default function Dashboard() {
   const maxToolCalls = topTools[0]?.[1] || 1;
   const maxSkillCost = topSkills[0]?.[1] || 1;
   const maxProjectCost = topProjects[0]?.[1] || 1;
-  const topSessions = [...scoped].sort((a, b) => b.estCostUSD - a.estCostUSD).slice(0, 8);
+  const topSessions = agg?.topSessions ?? [];
 
   const ctxData = agg ? [
     { label: "0–25 %", value: agg.ctxBuckets[0], fill: "var(--green)" },
@@ -271,7 +273,7 @@ export default function Dashboard() {
     { label: "75–100 %", value: agg.ctxBuckets[3], fill: "var(--red)" },
   ] : [];
 
-  const tooltipStyle = { background: "#1e222b", border: "1px solid #2a2f3a", borderRadius: 6, fontSize: 12 };
+  const tooltipStyle = { background: "var(--panel-2)", border: "1px solid var(--border)", borderRadius: 6, fontSize: 12 };
 
   // A horizontal stacked bar of the four token components + a legend with values.
   const composition = (values: number[], fmt: (n: number) => string) => {
@@ -355,14 +357,14 @@ export default function Dashboard() {
               <div style={{ flex: 1, minHeight: 140, minWidth: 0 }}>
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={agg.timeline} margin={{ top: 5, right: 5, bottom: 0, left: 0 }}>
-                  <CartesianGrid stroke="#2a2f3a" vertical={false} />
-                  <XAxis dataKey="date" tick={{ fill: "#8a91a0", fontSize: 10 }} stroke="#2a2f3a" height={16}
+                  <CartesianGrid stroke="var(--border)" vertical={false} />
+                  <XAxis dataKey="date" tick={{ fill: "var(--muted)", fontSize: 10 }} stroke="var(--border)" height={16}
                     tickFormatter={(v) => fmtDay(String(v))} />
-                  <YAxis tick={{ fill: "#8a91a0", fontSize: 11 }} stroke="#2a2f3a" width={32} />
+                  <YAxis tick={{ fill: "var(--muted)", fontSize: 11 }} stroke="var(--border)" width={32} />
                   <Tooltip contentStyle={tooltipStyle}
                     labelFormatter={(v) => fmtDay(String(v))}
-                    formatter={(v: number) => [fmtCost(v), t("dashboard_chart_cost")]} />
-                  <Area type="monotone" dataKey="cost" stroke="#6ea8fe" fill="#6ea8fe33" isAnimationActive={false} />
+                    formatter={(v) => [fmtCost(Number(v)), t("dashboard_chart_cost")]} />
+                  <Area type="monotone" dataKey="cost" stroke="var(--accent)" fill="color-mix(in srgb, var(--accent) 20%, transparent)" isAnimationActive={false} />
                 </AreaChart>
               </ResponsiveContainer>
               </div>
@@ -371,14 +373,14 @@ export default function Dashboard() {
               <div style={{ flex: 1, minHeight: 140, minWidth: 0 }}>
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={agg.timeline} margin={{ top: 5, right: 5, bottom: 0, left: 0 }}>
-                  <CartesianGrid stroke="#2a2f3a" vertical={false} />
-                  <XAxis dataKey="date" tick={{ fill: "#8a91a0", fontSize: 10 }} stroke="#2a2f3a" height={16}
+                  <CartesianGrid stroke="var(--border)" vertical={false} />
+                  <XAxis dataKey="date" tick={{ fill: "var(--muted)", fontSize: 10 }} stroke="var(--border)" height={16}
                     tickFormatter={(v) => fmtDay(String(v))} />
-                  <YAxis tick={{ fill: "#8a91a0", fontSize: 11 }} stroke="#2a2f3a" allowDecimals={false} width={24} />
+                  <YAxis tick={{ fill: "var(--muted)", fontSize: 11 }} stroke="var(--border)" allowDecimals={false} width={24} />
                   <Tooltip contentStyle={tooltipStyle}
                     labelFormatter={(v) => fmtDay(String(v))}
-                    formatter={(v: number) => [v, t("dashboard_chart_sessions")]} />
-                  <Bar dataKey="sessions" fill="#a78bfa" isAnimationActive={false} radius={[2, 2, 0, 0]} />
+                    formatter={(v) => [Number(v), t("dashboard_chart_sessions")]} />
+                  <Bar dataKey="sessions" fill="var(--accent-2)" isAnimationActive={false} radius={[2, 2, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
               </div>
@@ -442,7 +444,7 @@ export default function Dashboard() {
                         <Cell key={name} fill={SLICE_COLORS[i % SLICE_COLORS.length]} />
                       ))}
                     </Pie>
-                    <Tooltip contentStyle={tooltipStyle} formatter={(v: number) => [fmtCost(v), ""]} />
+                    <Tooltip contentStyle={tooltipStyle} formatter={(v) => [fmtCost(Number(v)), ""]} />
                   </PieChart>
                 </ResponsiveContainer>
                 <div className="dash-donut-legend">
@@ -498,7 +500,7 @@ export default function Dashboard() {
 
           {/* Sessions les plus coûteuses */}
           <Panel title={t("dashboard_panel_top_sessions")}>
-            {topSessions.length > 0 ? topSessions.map((s) => {
+            {topSessions.length > 0 ? topSessions.map(({ s, cost, tokens }) => {
               const m = dominantModel(s);
               return (
                 <Link
@@ -510,10 +512,10 @@ export default function Dashboard() {
                   <span className="dash-toplist-main">
                     <span className="dash-toplist-name" title={s.projectPath}>{s.projectLabel}</span>
                     <span className="dash-toplist-meta">
-                      {fmtDate(s.end)}{m ? " · " + modelLabel(m) : ""} · {fmtTokens(totalTokens(s.tokens))}
+                      {fmtDate(s.end)}{m ? " · " + modelLabel(m) : ""} · {fmtTokens(tokens)}
                     </span>
                   </span>
-                  <span className="dash-toplist-val cost">{fmtCost(s.estCostUSD)}</span>
+                  <span className="dash-toplist-val cost">{fmtCost(cost)}</span>
                 </Link>
               );
             }) : <div className="muted">{t("dashboard_no_data")}</div>}
@@ -562,11 +564,11 @@ export default function Dashboard() {
             <div style={{ flex: 1, minHeight: 130, minWidth: 0 }}>
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={ctxData} margin={{ top: 5, right: 5, bottom: 0, left: -20 }}>
-                <CartesianGrid stroke="#2a2f3a" vertical={false} />
-                <XAxis dataKey="label" tick={{ fill: "#8a91a0", fontSize: 10 }} stroke="#2a2f3a" />
-                <YAxis tick={{ fill: "#8a91a0", fontSize: 11 }} stroke="#2a2f3a" allowDecimals={false} />
+                <CartesianGrid stroke="var(--border)" vertical={false} />
+                <XAxis dataKey="label" tick={{ fill: "var(--muted)", fontSize: 10 }} stroke="var(--border)" />
+                <YAxis tick={{ fill: "var(--muted)", fontSize: 11 }} stroke="var(--border)" allowDecimals={false} />
                 <Tooltip contentStyle={tooltipStyle}
-                  formatter={(v: number) => [v, t("dashboard_health_ctx_bucket")]} />
+                  formatter={(v) => [Number(v), t("dashboard_health_ctx_bucket")]} />
                 <Bar dataKey="value" isAnimationActive={false} radius={[2, 2, 0, 0]}>
                   {ctxData.map((entry, i) => <Cell key={i} fill={entry.fill} />)}
                 </Bar>

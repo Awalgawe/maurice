@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import type { HookEntry, SessionMeta } from "../types";
-import { getHooks, getSessions } from "../api";
+import type { HookEntry } from "../types";
+import { getHooks } from "../api";
 import { useT } from "../hooks/useT";
+import { useSessions } from "../hooks/useSessions";
 import { Picker } from "../components/ui/Picker";
 import { Panel } from "../components/ui/Panel";
 
@@ -24,7 +25,7 @@ function ScopeBadge({ scope }: { scope: HookEntry["scope"] }) {
           ? t("hooks_scope_project")
           : t("hooks_scope_project_local");
   return (
-    <span className="chip" style={{ color, borderColor: color + "55" }}>
+    <span className="chip" style={{ color, borderColor: `color-mix(in srgb, ${color} 33%, transparent)` }}>
       {label}
     </span>
   );
@@ -50,8 +51,11 @@ function fmtHookMs(ms: number): string {
   return ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(1)} s`;
 }
 
-/** Sum fires/duration across merged hookNames matching a config entry's event
- *  ("Event" exact, or "Event:matcher" prefix) — best-effort join, config vs. runtime. */
+/** Aggregate fires/duration for an event across its runtime rows ("Event" exact
+ *  or "Event:matcher"). Reported at the event-group level, not per hook: the
+ *  runtime stats drop the command (privacy), so a total can't be attributed to a
+ *  single config entry — showing it per row would repeat one event-wide number on
+ *  every hook sharing that event and read as each having fired that many times. */
 function matchUsage(usage: HookUsageRow[], event: string): { fires: number; avgMs: number } | null {
   let fires = 0;
   let totalDurationMs = 0;
@@ -64,21 +68,12 @@ function matchUsage(usage: HookUsageRow[], event: string): { fires: number; avgM
   return fires ? { fires, avgMs: totalDurationMs / fires } : null;
 }
 
-function useSessionIndex() {
-  const [sessions, setSessions] = useState<SessionMeta[]>([]);
-  const [loading, setLoading] = useState(true);
-  useEffect(() => {
-    getSessions().then((s) => { setSessions(s); setLoading(false); }).catch(() => setLoading(false));
-  }, []);
-  return { sessions, loading };
-}
-
 export default function Hooks() {
   const t = useT();
   const [hooks, setHooks] = useState<HookEntry[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [scope, setScope] = useState("");
-  const { sessions } = useSessionIndex();
+  const { sessions, status: sessionsStatus, error: sessionsError, reload: reloadSessions } = useSessions();
 
   useEffect(() => {
     getHooks().then(setHooks).catch((e) => setErr(String(e)));
@@ -143,14 +138,6 @@ export default function Hooks() {
           <span style={{ color: "var(--muted)", fontSize: 12 }}>
             {t("hooks_matcher_label")}: {h.matcher || t("hooks_matcher_all")}
           </span>
-          {(() => {
-            const m = matchUsage(usage, h.event);
-            return m ? (
-              <span style={{ color: "var(--muted)", fontSize: 11 }}>
-                × {m.fires} · ~{fmtHookMs(m.avgMs)}
-              </span>
-            ) : null;
-          })()}
           <span style={{ flex: 1 }} />
           {h.async && (
             <span className="chip" style={{ color: "var(--accent-2)", fontSize: 11 }}>
@@ -189,7 +176,18 @@ export default function Hooks() {
 
   return (
     <div>
-      {usage.length > 0 && (
+      {/* The usage table is built from the session index. A failed load must read
+          as an error with retry, not as "no executions". */}
+      {sessionsStatus === "error" ? (
+        <Panel title={t("hooks_usage_title")}>
+          <div className="async-error-inline">
+            <span style={{ color: "var(--red)" }}>{sessionsError || t("async_error")}</span>
+            <button type="button" className="retry-btn" onClick={reloadSessions}>
+              {t("async_retry")}
+            </button>
+          </div>
+        </Panel>
+      ) : usage.length > 0 ? (
         <Panel title={t("hooks_usage_title")}>
           <div style={{ overflowX: "auto" }}>
             <table>
@@ -218,7 +216,7 @@ export default function Hooks() {
             </table>
           </div>
         </Panel>
-      )}
+      ) : null}
 
       <div className="controls">
         <Picker label={t("hooks_filter_scope")} value={scope} set={setScope} opts={scopeOpts} />
@@ -248,6 +246,14 @@ export default function Hooks() {
           >
             <span>{g.event}</span>
             <span style={{ opacity: 0.6 }}>{g.hooks.length}</span>
+            {(() => {
+              const m = matchUsage(usage, g.event);
+              return m ? (
+                <span style={{ opacity: 0.6, fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>
+                  × {m.fires} · ~{fmtHookMs(m.avgMs)}
+                </span>
+              ) : null;
+            })()}
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {g.hooks.map(renderHook)}

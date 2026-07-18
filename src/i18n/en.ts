@@ -1,6 +1,10 @@
 import type { I18nKey } from "./fr";
 
 export const en: Record<I18nKey, string> = {
+  async_error: "Failed to load.",
+  async_retry: "Retry",
+  app_loading: "Loading…",
+
   live_label: "LIVE",
   live_elapsed: "for",
   live_msgs: "msgs",
@@ -84,8 +88,21 @@ export const en: Record<I18nKey, string> = {
   sessions_count: "sessions",
   sessions_loading: "Loading index…",
   sessions_error_prefix: "API error: ",
+  sessions_filters_error: "Filters unavailable.",
+  sessions_empty: "No sessions yet.",
   sessions_day_today: "Today",
   sessions_day_yesterday: "Yesterday",
+
+  nav_dashboard: "Dashboard",
+  nav_sessions: "Sessions",
+  nav_workflow: "Workflow",
+  nav_timeline: "Timeline",
+  nav_memories: "Memories",
+  nav_plans: "Plans",
+  nav_hooks: "Hooks",
+  nav_agents: "Agents",
+  nav_mcp: "MCP",
+  nav_bilans: "Bilans",
 
   config_open: "Configuration",
   config_close: "Close",
@@ -93,6 +110,10 @@ export const en: Record<I18nKey, string> = {
   config_theme: "Theme",
   config_lang: "Language",
   config_editor: "Editor",
+  editor_select_title: "Editor for 'open' links",
+  editor_os_default: "OS default",
+  editor_open_in: "Open in {editor}",
+  lang_default: "Default",
 
   detail_back: "← Sessions",
   detail_panel_cost: "Cost & tokens (estimate)",
@@ -125,6 +146,7 @@ export const en: Record<I18nKey, string> = {
   subagent_back: "← Session",
   subagent_errors: "errors",
   detail_panel_memories: "Memories",
+  detail_memories_error: "Could not load linked memories.",
   detail_memories_link: "→ View in Memories",
   detail_panel_resume: "Resume",
   detail_copy_done: "Copied ✓",
@@ -297,6 +319,9 @@ export const en: Record<I18nKey, string> = {
   message_copy_uuid: "Copy UUID",
   tool_result_empty: "(empty)",
   tool_result_reminder: "system-reminder",
+  tool_result_truncated: "… preview truncated",
+  tool_result_show_all: "Show all",
+  tool_result_collapse: "Collapse",
 
   tool_bg: "bg",
   tool_all: "all",

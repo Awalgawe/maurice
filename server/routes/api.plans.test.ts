@@ -27,7 +27,7 @@ beforeAll(async () => {
   const app = express();
   app.use("/api", api);
   await new Promise<void>((resolve) => {
-    server = app.listen(0, resolve);
+    server = app.listen(0, () => resolve());
   });
   base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
 });
