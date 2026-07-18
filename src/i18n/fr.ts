@@ -117,6 +117,7 @@ export const fr = {
   config_editor: "Éditeur",
   editor_select_title: "Éditeur pour les liens « ouvrir »",
   editor_os_default: "Défaut OS",
+  editor_open_in: "Ouvrir dans {editor}",
   lang_default: "Défaut",
 
   // SessionDetail

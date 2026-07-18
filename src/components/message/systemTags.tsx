@@ -1,6 +1,7 @@
 import React, { useMemo } from "react";
 import { ansiToHtml } from "../../lib/ansi";
-import { useEditor } from "../../state/EditorContext";
+import { editorLabel, useEditor } from "../../state/EditorContext";
+import { useT } from "../../hooks/useT";
 import { Md } from "./Markdown";
 
 // Matches any known system tag (the `g` flag means callers must reset lastIndex).
@@ -8,6 +9,9 @@ const SYSTEM_TAG_RE = /<(ide_opened_file|command-name|command-args|command-messa
 
 function IdeOpenedFile({ content }: { content: string }) {
   const { editor } = useEditor();
+  const t = useT();
+  const label = editorLabel(editor, t);
+  const openTitle = t("editor_open_in", { editor: label });
   const { filePath, fileName } = useMemo(() => {
     const match = content.match(/The user opened the file (.+?) in the IDE/);
     const fp = match?.[1] ?? content.trim();
@@ -17,17 +21,17 @@ function IdeOpenedFile({ content }: { content: string }) {
     <span className="ide-file-tag">
       📄 <a href={`file://${filePath}`} title={filePath}>{fileName}</a>
       {editor.url ? (
-        <a className="ide-file-open" href={editor.url(filePath)} title={`Open in ${editor.label}`}>
-          {editor.label}
+        <a className="ide-file-open" href={editor.url(filePath)} title={openTitle}>
+          {label}
         </a>
       ) : (
-        <button className="ide-file-open" title={`Open in ${editor.label}`}
+        <button className="ide-file-open" title={openTitle}
           onClick={() => fetch("/api/open", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ path: filePath }),
           })}>
-          {editor.label}
+          {label}
         </button>
       )}
     </span>

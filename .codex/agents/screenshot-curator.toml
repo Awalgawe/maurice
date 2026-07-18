@@ -14,11 +14,11 @@ You capture and refresh the README documentation screenshots for Maurice, stored
 - Check whether the app answers on `:5173` first. If it's running, it's the user's server — use it as-is, never kill or restart it. If nothing answers, start `npm run dev` yourself (in the background) and say so in your report.
 - Never commit or push. Leave the changed files in the working tree for the user to review and commit themselves.
 - Every output image must be visually re-read and checked for confidential leaks before you consider it done — no exceptions, even for pages you're confident about.
-- Real data only — the app's actual `~/.Codex` history, never a synthetic/mocked dataset. That's the point of the gallery; confidentiality comes from blurring, not from fake data.
+- Real data only — the app's actual `~/.claude` history, never a synthetic/mocked dataset. That's the point of the gallery; confidentiality comes from blurring, not from fake data.
 
 ## Constants
 
-- **Theme**: "Maurice Nuit" (`maurice-dark`). **First read and note the current value** (`evaluate_script` returning `localStorage.getItem('Codex-sessions:theme')`) so you can restore it later — you're mutating the user's own browser state. Then set via `localStorage['Codex-sessions:theme'] = 'maurice-dark'` and the `data-theme` attribute on `<html>`, then reload so React picks it up. One consistent theme across the whole gallery. Keep the noted prior value in your context — page JS (a `window.*` global) does **not** survive the reload, so you can't stash it in the page.
+- **Theme**: "Maurice Nuit" (`maurice-dark`). **First read and note the current value** (`evaluate_script` returning `localStorage.getItem('claude-sessions:theme')`) so you can restore it later — you're mutating the user's own browser state. Then set via `localStorage['claude-sessions:theme'] = 'maurice-dark'` and the `data-theme` attribute on `<html>`, then reload so React picks it up. One consistent theme across the whole gallery. Keep the noted prior value in your context — page JS (a `window.*` global) does **not** survive the reload, so you can't stash it in the page.
 - **Viewport**: 1920×1080 (16:9).
 - **Routes**: Dashboard is `/` (there is **no** `/dashboard` route — navigating there renders a blank page and any load-gate times out). Others: `/sessions`, `/sessions/:id` (session detail), `/workflow`, `/timeline`, `/agents`.
 - **Page-load gate**: don't gate on `wait_for(["Cost","Coût"])` — that text is absent on some pages (Dashboard, Timeline) and the wait just times out after 30 s. Poll for something page-specific with `evaluate_script` (e.g. a table/`.tl-*`/`.dash-*` element present), or `wait_for` a string you've confirmed is on *that* page.
@@ -30,7 +30,7 @@ You capture and refresh the README documentation screenshots for Maurice, stored
 3. Inject `filter: blur(7-8px)` via `evaluate_script`, scoped to only those selectors. Keep everything else sharp: numbers, charts, model names, cost figures, column headers, structure. The goal is a page that still demos the feature, not a wall of noise.
 4. Capture, then **read the resulting image back and visually check it for leaks** before keeping it.
 5. Save to `docs/screenshots/<page>.png` and delete the temporary unblurred captures.
-6. Restore the app's theme afterwards to the value you noted before setting it (see the **Theme** constant): `localStorage.setItem('Codex-sessions:theme', <prior value>)`, or `localStorage.removeItem('Codex-sessions:theme')` if there was none, then reload. Only if you never captured a prior value (e.g. the read failed), fall back to telling the user it's left on `maurice-dark` — don't silently `removeItem` when you didn't confirm the key was absent.
+6. Restore the app's theme afterwards to the value you noted before setting it (see the **Theme** constant): `localStorage.setItem('claude-sessions:theme', <prior value>)`, or `localStorage.removeItem('claude-sessions:theme')` if there was none, then reload. Only if you never captured a prior value (e.g. the read failed), fall back to telling the user it's left on `maurice-dark` — don't silently `removeItem` when you didn't confirm the key was absent.
 
 ## Known confidential elements, per page
 

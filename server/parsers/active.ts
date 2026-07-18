@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import readline from "node:readline";
 import path from "node:path";
-import { PROJECTS_DIR, decodeProjectId } from "../claudeDir.ts";
+import { PROJECTS_DIR } from "../claudeDir.ts";
 import { cacheCreationSplit, tokensFromUsage } from "./jsonl.ts";
 import { estimateCost } from "../pricing.ts";
 import type { ActiveSession, TokenTotals } from "../../src/types.ts";
@@ -112,12 +112,13 @@ export async function getActiveSession(): Promise<ActiveSession | { active: fals
     if (p.lastModel) lastModel = p.lastModel;
   }
 
-  // Prefer the real cwd captured in the transcript; the encoded project dir name
-  // replaces "/" with "-" and collides with real hyphens (so "/foo/my-project"
-  // would decode to "/foo/my/project"). Fall back to the lossy decode only when
-  // no line carried a cwd.
+  // Prefer the real cwd captured in the transcript. The encoded project dir name
+  // replaces "/" with "-" and collides with real hyphens, so decoding it would
+  // invent segment boundaries ("/foo/my-project" → "/foo/my/project"). When no
+  // line carried a cwd (rare — every real transcript line has one), fall back to
+  // the raw encoded id as an opaque identifier rather than a fabricated path.
   const projectPath = files.length === 1
-    ? (parsed[0].cwd ?? decodeProjectId(files[0].projectId))
+    ? (parsed[0].cwd ?? files[0].projectId)
     : "";
 
   const result: ActiveSession = {

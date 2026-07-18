@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState } from "react";
 import type { I18nKey } from "../i18n/index";
+import type { TFunc } from "../hooks/useT";
 
 export interface EditorDef {
   id: string;
@@ -8,6 +9,13 @@ export interface EditorDef {
   labelKey?: I18nKey;
   /** null = use server-side /api/open (OS default) */
   url: ((path: string) => string) | null;
+}
+
+/** Display name for an editor: the translated label when it's translatable
+ *  (the OS default), the brand name otherwise. Shared by every consumer so no
+ *  one renders the raw `label` or hardcodes an "Open in …" title. */
+export function editorLabel(editor: EditorDef, t: TFunc): string {
+  return editor.labelKey ? t(editor.labelKey) : editor.label;
 }
 
 export const EDITORS: EditorDef[] = [

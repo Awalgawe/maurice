@@ -139,6 +139,9 @@ export default function Dashboard() {
     let interruptionCount = 0;
     const denialCounts: Record<string, number> = {};
     const promptCounts: Record<string, number> = {};
+    // Per-session windowed cost/tokens/errors, so error rate and the top-sessions
+    // list describe the selected period — not the sessions' full-lifetime totals.
+    const perSession: { s: SessionMeta; cost: number; tokens: number; errors: number }[] = [];
 
     for (const s of scoped) {
       // Decomposable KPIs are summed over the days within the window (byDay), so
@@ -149,6 +152,7 @@ export default function Dashboard() {
       totalCost += w.cost;
       totalTok += totalTokens(w.tokens);
       totalErrors += w.errorCount;
+      perSession.push({ s, cost: w.cost, tokens: totalTokens(w.tokens), errors: w.errorCount });
       for (const e of s.errors ?? []) {
         if (cutoffDay && e.ts && ymd(new Date(e.ts)) < cutoffDay) continue;
         allErrors.push({ ...e, sessionId: s.id, projectLabel: s.projectLabel });
@@ -213,7 +217,13 @@ export default function Dashboard() {
       .map(([date, v]) => ({ date, ...v }));
 
     const n = scoped.length;
-    const errorRate = ((scoped.filter((s) => s.hasErrors).length / n) * 100).toFixed(1);
+    // Windowed: a session counts as errored only if it errored within the period.
+    const errorRate = ((perSession.filter((p) => p.errors > 0).length / n) * 100).toFixed(1);
+    // Costliest sessions ranked and displayed on their in-window cost/tokens, so a
+    // session mostly spent before the window doesn't outrank one spent within it.
+    const topSessions = [...perSession]
+      .sort((a, b) => b.cost - a.cost)
+      .slice(0, 8);
     const recentErrors = allErrors
       .sort((a, b) => (b.ts ?? "").localeCompare(a.ts ?? ""))
       .slice(0, 5);
@@ -239,6 +249,7 @@ export default function Dashboard() {
       compCost: [costComp.input, costComp.output, costComp.cacheRead, costComp.cacheCreate],
       modelCostAgg, skillCostAgg, projectCostAgg, projectLabelMap,
       mcpTally, toolCallsAgg, toolErrorsAgg, timeline, ctxBuckets, errorRate, heat, heatMax, recentErrors,
+      topSessions,
     };
   }, [scoped, range]);
 
@@ -253,7 +264,7 @@ export default function Dashboard() {
   const maxToolCalls = topTools[0]?.[1] || 1;
   const maxSkillCost = topSkills[0]?.[1] || 1;
   const maxProjectCost = topProjects[0]?.[1] || 1;
-  const topSessions = [...scoped].sort((a, b) => b.estCostUSD - a.estCostUSD).slice(0, 8);
+  const topSessions = agg?.topSessions ?? [];
 
   const ctxData = agg ? [
     { label: "0–25 %", value: agg.ctxBuckets[0], fill: "var(--green)" },
@@ -489,7 +500,7 @@ export default function Dashboard() {
 
           {/* Sessions les plus coûteuses */}
           <Panel title={t("dashboard_panel_top_sessions")}>
-            {topSessions.length > 0 ? topSessions.map((s) => {
+            {topSessions.length > 0 ? topSessions.map(({ s, cost, tokens }) => {
               const m = dominantModel(s);
               return (
                 <Link
@@ -501,10 +512,10 @@ export default function Dashboard() {
                   <span className="dash-toplist-main">
                     <span className="dash-toplist-name" title={s.projectPath}>{s.projectLabel}</span>
                     <span className="dash-toplist-meta">
-                      {fmtDate(s.end)}{m ? " · " + modelLabel(m) : ""} · {fmtTokens(totalTokens(s.tokens))}
+                      {fmtDate(s.end)}{m ? " · " + modelLabel(m) : ""} · {fmtTokens(tokens)}
                     </span>
                   </span>
-                  <span className="dash-toplist-val cost">{fmtCost(s.estCostUSD)}</span>
+                  <span className="dash-toplist-val cost">{fmtCost(cost)}</span>
                 </Link>
               );
             }) : <div className="muted">{t("dashboard_no_data")}</div>}

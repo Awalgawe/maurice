@@ -4,7 +4,7 @@ import { getAgents } from "../api";
 import { useT } from "../hooks/useT";
 import { useFmt } from "../hooks/useFmt";
 import { useSortable } from "../hooks/useSortable";
-import { useEditor } from "../state/EditorContext";
+import { editorLabel, useEditor } from "../state/EditorContext";
 import { Picker } from "../components/ui/Picker";
 import { SortHeader } from "../components/ui/SortHeader";
 import { totalTokens } from "../format";
@@ -51,6 +51,8 @@ function sourceLabel(t: ReturnType<typeof useT>, source: AgentDefinition["source
 function DefinitionLine({ def }: { def: AgentDefinition }) {
   const t = useT();
   const { editor } = useEditor();
+  const label = editorLabel(editor, t);
+  const openTitle = t("editor_open_in", { editor: label });
   const bits = [
     sourceLabel(t, def.source) + (def.source === "project" && def.projectLabel ? ` (${def.projectLabel})` : ""),
     def.model,
@@ -62,13 +64,13 @@ function DefinitionLine({ def }: { def: AgentDefinition }) {
       <span>·</span>
       <code style={{ fontSize: 10 }}>{def.filePath}</code>
       {editor.url ? (
-        <a className="ide-file-open" href={editor.url(def.filePath)} title={`Open in ${editor.label}`}>
-          {editor.label}
+        <a className="ide-file-open" href={editor.url(def.filePath)} title={openTitle}>
+          {label}
         </a>
       ) : (
         <button
           className="ide-file-open"
-          title={`Open in ${editor.label}`}
+          title={openTitle}
           onClick={() =>
             fetch("/api/open", {
               method: "POST",
@@ -77,7 +79,7 @@ function DefinitionLine({ def }: { def: AgentDefinition }) {
             })
           }
         >
-          {editor.label}
+          {label}
         </button>
       )}
     </div>

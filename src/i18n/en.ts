@@ -112,6 +112,7 @@ export const en: Record<I18nKey, string> = {
   config_editor: "Editor",
   editor_select_title: "Editor for 'open' links",
   editor_os_default: "OS default",
+  editor_open_in: "Open in {editor}",
   lang_default: "Default",
 
   detail_back: "← Sessions",
