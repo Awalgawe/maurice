@@ -62,6 +62,8 @@ export interface ThreadDetailProps {
   onRewrite?: (rw: CacheRewriteRef) => void;
   mcpTools?: string[];
   memories?: MemoryEntry[];
+  memoriesError?: string | null;
+  onReloadMemories?: () => void;
   resumeId?: string;
   // Distinct files edited (file-history-snapshot union), capped list — value
   // rendered is the count, the (possibly larger) true total.
@@ -259,7 +261,18 @@ export function ThreadDetail(p: ThreadDetailProps) {
           </Panel>
         )}
 
-        {p.memories && p.memories.length > 0 && (
+        {p.memoriesError ? (
+          <Panel title={t("detail_panel_memories")}>
+            <div className="async-error-inline">
+              <span style={{ color: "var(--red)", fontSize: 13 }}>{t("detail_memories_error")}</span>
+              {p.onReloadMemories && (
+                <button type="button" className="retry-btn" onClick={p.onReloadMemories}>
+                  {t("async_retry")}
+                </button>
+              )}
+            </div>
+          </Panel>
+        ) : p.memories && p.memories.length > 0 ? (
           <Panel title={`${t("detail_panel_memories")} (${p.memories.length})`}>
             {p.memories.map((mem) => (
               <div key={mem.name} style={{ marginBottom: 8 }}>
@@ -273,7 +286,7 @@ export function ThreadDetail(p: ThreadDetailProps) {
               </Link>
             </div>
           </Panel>
-        )}
+        ) : null}
 
         {p.resumeId && (
           <Panel title={t("detail_panel_resume")}>

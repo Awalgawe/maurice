@@ -1,4 +1,9 @@
 export const fr = {
+  // Generic async states
+  async_error: "Échec du chargement.",
+  async_retry: "Réessayer",
+  app_loading: "Chargement…",
+
   // Live session
   live_label: "EN COURS",
   live_elapsed: "depuis",
@@ -86,8 +91,22 @@ export const fr = {
   sessions_count: "sessions",
   sessions_loading: "Chargement de l'index…",
   sessions_error_prefix: "Erreur API : ",
+  sessions_filters_error: "Filtres indisponibles.",
+  sessions_empty: "Aucune session pour l'instant.",
   sessions_day_today: "Aujourd'hui",
   sessions_day_yesterday: "Hier",
+
+  // Navigation
+  nav_dashboard: "Dashboard",
+  nav_sessions: "Sessions",
+  nav_workflow: "Workflow",
+  nav_timeline: "Timeline",
+  nav_memories: "Memories",
+  nav_plans: "Plans",
+  nav_hooks: "Hooks",
+  nav_agents: "Agents",
+  nav_mcp: "MCP",
+  nav_bilans: "Bilans",
 
   // Topbar
   config_open: "Configuration",
@@ -96,6 +115,9 @@ export const fr = {
   config_theme: "Thème",
   config_lang: "Langue",
   config_editor: "Éditeur",
+  editor_select_title: "Éditeur pour les liens « ouvrir »",
+  editor_os_default: "Défaut OS",
+  lang_default: "Défaut",
 
   // SessionDetail
   detail_back: "← Sessions",
@@ -129,6 +151,7 @@ export const fr = {
   subagent_back: "← Session",
   subagent_errors: "erreurs",
   detail_panel_memories: "Mémoires",
+  detail_memories_error: "Impossible de charger les mémoires liées.",
   detail_memories_link: "→ Voir dans Memories",
   detail_panel_resume: "Reprendre",
   detail_copy_done: "Copié ✓",
@@ -308,6 +331,9 @@ export const fr = {
   message_copy_uuid: "Copier l'UUID",
   tool_result_empty: "(vide)",
   tool_result_reminder: "system-reminder",
+  tool_result_truncated: "… aperçu tronqué",
+  tool_result_show_all: "Tout afficher",
+  tool_result_collapse: "Replier",
 
   // Tool chips & summaries
   tool_bg: "bg",

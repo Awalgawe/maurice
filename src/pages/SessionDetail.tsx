@@ -6,6 +6,7 @@ import { skillLabel } from "../format";
 import { useT } from "../hooks/useT";
 import { ThreadDetail } from "../components/thread/ThreadDetail";
 import { Chip } from "../components/ui/Chip";
+import { ErrorState } from "../components/ui/ErrorState";
 
 const PAGE = 200;
 
@@ -15,8 +16,10 @@ export default function SessionDetail() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  // 1-indexed page in URL (?page=2); defaults to 1 when absent.
-  const pageNum = Math.max(1, Number(searchParams.get("page") || "1"));
+  // 1-indexed page in URL (?page=2); defaults to 1 when absent, malformed, or
+  // out of range (Number("abc") is NaN — Math.max(1, NaN) is NaN, not 1).
+  const rawPage = Number(searchParams.get("page"));
+  const pageNum = Number.isFinite(rawPage) && rawPage >= 1 ? Math.floor(rawPage) : 1;
   const offset = (pageNum - 1) * PAGE;
   // Served view (?branch=f1): null = live thread, "fN" = an abandoned fork.
   const branch = searchParams.get("branch");
@@ -24,6 +27,9 @@ export default function SessionDetail() {
   const [data, setData] = useState<Detail | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [memories, setMemories] = useState<MemoryEntry[]>([]);
+  const [memoriesErr, setMemoriesErr] = useState<string | null>(null);
+  const [memoriesNonce, setMemoriesNonce] = useState(0);
+  const [reloadNonce, setReloadNonce] = useState(0);
   const prevId = useRef<string | undefined>(undefined);
 
   // When switching to a different session, reset to page 1 before fetching.
@@ -36,14 +42,26 @@ export default function SessionDetail() {
 
   useEffect(() => {
     if (!id) return;
+    let live = true;
     setData(null);
-    getDetail(id, offset, PAGE, branch).then(setData).catch((e) => setErr(String(e)));
-  }, [id, offset, branch]);
+    setErr(null); // clear a prior error so a later success isn't masked by it
+    getDetail(id, offset, PAGE, branch)
+      .then((d) => { if (live) setData(d); })
+      .catch((e) => { if (live) setErr(String(e)); });
+    return () => { live = false; }; // drop a stale response from a superseded page/branch
+  }, [id, offset, branch, reloadNonce]);
 
+  // Linked memories are a secondary source: a failure is shown in the panel (with
+  // retry), never flattened to an empty list that reads as "no linked memories".
   useEffect(() => {
     if (!id) return;
-    getSessionMemories(id).then(setMemories).catch(() => setMemories([]));
-  }, [id]);
+    let live = true;
+    setMemoriesErr(null);
+    getSessionMemories(id)
+      .then((m) => { if (live) { setMemories(m); setMemoriesErr(null); } })
+      .catch((e) => { if (live) setMemoriesErr(String(e)); });
+    return () => { live = false; };
+  }, [id, memoriesNonce]);
 
   function goToBranch(ref: string | null) {
     // Land on the divergence line of the branch we enter — or of the one we
@@ -89,7 +107,7 @@ export default function SessionDetail() {
     navigate({ search: qs ? `?${qs}` : "", hash: `#msg-${rw.uuid}` });
   }
 
-  if (err) return <div className="center">{t("detail_error_prefix")}{err}</div>;
+  if (err) return <ErrorState message={`${t("detail_error_prefix")}${err}`} onRetry={() => setReloadNonce((n) => n + 1)} />;
   if (!data) return <div className="center">{t("detail_loading")}</div>;
 
   const m = data.meta;
@@ -142,6 +160,8 @@ export default function SessionDetail() {
       onRewrite={goToRewrite}
       mcpTools={m.mcpTools}
       memories={memories}
+      memoriesError={memoriesErr}
+      onReloadMemories={() => setMemoriesNonce((n) => n + 1)}
       resumeId={m.id}
       filesTouchedCount={m.filesTouchedCount}
       filesTouched={m.filesTouched}

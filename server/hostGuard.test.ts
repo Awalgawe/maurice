@@ -13,7 +13,7 @@ beforeAll(async () => {
     res.json({ ok: true });
   });
   await new Promise<void>((resolve) => {
-    server = app.listen(0, resolve);
+    server = app.listen(0, () => resolve());
   });
   port = (server.address() as { port: number }).port;
 });

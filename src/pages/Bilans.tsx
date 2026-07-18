@@ -69,7 +69,7 @@ export default function Bilans() {
             <summary className="head" style={{ cursor: "pointer", userSelect: "none" }}>
               <span
                 className="chip"
-                style={{ color: "var(--accent)", borderColor: "var(--accent)55", fontFamily: "var(--mono)", fontSize: 11 }}
+                style={{ color: "var(--accent)", borderColor: "color-mix(in srgb, var(--accent) 33%, transparent)", fontFamily: "var(--mono)", fontSize: 11 }}
               >
                 {b.date}
               </span>

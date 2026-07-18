@@ -7,8 +7,9 @@ export async function* iterateJsonl(filePath: string): AsyncGenerator<any> {
   let stream: fs.ReadStream;
   try {
     stream = fs.createReadStream(filePath, { encoding: "utf8" });
-  } catch {
-    return;
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw e;
   }
   const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
   try {
@@ -23,6 +24,12 @@ export async function* iterateJsonl(filePath: string): AsyncGenerator<any> {
       }
       yield obj;
     }
+  } catch (e) {
+    // A file removed between discovery and read surfaces here — ENOENT is emitted
+    // asynchronously on stream open/iteration, not by the createReadStream call
+    // above. Swallow only that (treat as an empty file); any other read error is
+    // real and must propagate rather than masquerade as zero elements.
+    if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
   } finally {
     rl.close();
     stream.close();

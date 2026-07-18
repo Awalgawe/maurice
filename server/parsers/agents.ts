@@ -149,35 +149,91 @@ export function listDefinedAgents(index: SessionMeta[]): DefinedAgent[] {
     out.push(...parseAgentsIn(dir, "project", null, s.projectId, s.projectLabel));
   }
 
+  for (const { pluginName, agentsDir } of resolveInstalledPlugins()) {
+    out.push(...parseAgentsIn(agentsDir, "plugin", pluginName, null, null));
+  }
+
+  return out;
+}
+
+/** Compare dotted version strings numerically ("1.10.0" > "1.9.0"); ties and
+ *  non-numeric segments fall back to lexical order. */
+function compareVersions(a: string, b: string): number {
+  const pa = a.split(".");
+  const pb = b.split(".");
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const na = Number(pa[i] ?? 0);
+    const nb = Number(pb[i] ?? 0);
+    if (Number.isNaN(na) || Number.isNaN(nb)) return a.localeCompare(b);
+    if (na !== nb) return na - nb;
+  }
+  return 0;
+}
+
+/**
+ * Resolve each plugin's *installed* version only. The cache keeps orphaned older
+ * versions side by side (…/plugin/1.0.0, /1.1.0, /1.2.0), so scanning every
+ * version dir would surface stale, duplicated agents. Primary source is
+ * installed_plugins.json (authoritative installPath per plugin); if it's absent
+ * or unreadable, fall back to the highest version dir found on disk.
+ */
+function resolveInstalledPlugins(): { pluginName: string; agentsDir: string }[] {
+  const out: { pluginName: string; agentsDir: string }[] = [];
+  const seen = new Set<string>();
+
+  const metaFile = path.join(CLAUDE_DIR, "plugins", "installed_plugins.json");
+  let meta: any = null;
+  try {
+    meta = JSON.parse(fs.readFileSync(metaFile, "utf8"));
+  } catch {
+    meta = null;
+  }
+
+  if (meta?.plugins && typeof meta.plugins === "object") {
+    for (const [key, entries] of Object.entries(meta.plugins)) {
+      if (!Array.isArray(entries)) continue;
+      const pluginName = key.split("@")[0]; // key is "<plugin>@<marketplace>"
+      for (const e of entries) {
+        const installPath = (e as any)?.installPath;
+        if (typeof installPath !== "string" || seen.has(installPath)) continue;
+        seen.add(installPath);
+        out.push({ pluginName, agentsDir: path.join(installPath, "agents") });
+      }
+    }
+    if (out.length) return out;
+  }
+
+  // Fallback: no usable metadata — pick the highest version dir per plugin.
   const pluginsCacheDir = path.join(CLAUDE_DIR, "plugins", "cache");
   let marketplaces: string[];
   try {
     marketplaces = fs.readdirSync(pluginsCacheDir);
   } catch {
-    marketplaces = [];
+    return out;
   }
   for (const marketplace of marketplaces) {
     const marketplaceDir = path.join(pluginsCacheDir, marketplace);
-    let plugins: string[];
+    let plugins: fs.Dirent[];
     try {
-      plugins = fs.readdirSync(marketplaceDir);
+      plugins = fs.readdirSync(marketplaceDir, { withFileTypes: true });
     } catch {
       continue;
     }
     for (const plugin of plugins) {
-      const pluginDir = path.join(marketplaceDir, plugin);
-      let versions: string[];
+      if (!plugin.isDirectory()) continue;
+      const pluginDir = path.join(marketplaceDir, plugin.name);
+      let versions: fs.Dirent[];
       try {
-        versions = fs.readdirSync(pluginDir);
+        versions = fs.readdirSync(pluginDir, { withFileTypes: true });
       } catch {
         continue;
       }
-      for (const version of versions) {
-        out.push(...parseAgentsIn(path.join(pluginDir, version, "agents"), "plugin", plugin, null, null));
-      }
+      const versionDirs = versions.filter((v) => v.isDirectory()).map((v) => v.name);
+      if (!versionDirs.length) continue;
+      const latest = versionDirs.reduce((a, b) => (compareVersions(a, b) >= 0 ? a : b));
+      out.push({ pluginName: plugin.name, agentsDir: path.join(pluginDir, latest, "agents") });
     }
   }
-
   return out;
 }
 

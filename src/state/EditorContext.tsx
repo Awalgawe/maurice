@@ -1,17 +1,20 @@
 import React, { createContext, useContext, useState } from "react";
+import type { I18nKey } from "../i18n/index";
 
 export interface EditorDef {
   id: string;
   label: string;
+  /** i18n key overriding `label` when the name is translatable (not a brand). */
+  labelKey?: I18nKey;
   /** null = use server-side /api/open (OS default) */
   url: ((path: string) => string) | null;
 }
 
 export const EDITORS: EditorDef[] = [
-  { id: "os",      label: "Défaut OS", url: null },
-  { id: "vscode",  label: "VS Code",   url: (p) => `vscode://file/${p}` },
-  { id: "cursor",  label: "Cursor",    url: (p) => `cursor://file/${p}` },
-  { id: "zed",     label: "Zed",       url: (p) => `zed://file/${p}` },
+  { id: "os",      label: "OS",      labelKey: "editor_os_default", url: null },
+  { id: "vscode",  label: "VS Code", url: (p) => `vscode://file/${p}` },
+  { id: "cursor",  label: "Cursor",  url: (p) => `cursor://file/${p}` },
+  { id: "zed",     label: "Zed",     url: (p) => `zed://file/${p}` },
 ];
 
 const STORAGE_KEY = "claude-sessions:editor";

@@ -1,5 +1,14 @@
-import { describe, it, expect } from "vitest";
-import { cacheCreationSplit, extractBlocks, stringifyToolResult } from "./jsonl.ts";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { cacheCreationSplit, extractBlocks, iterateJsonl, stringifyToolResult } from "./jsonl.ts";
+
+async function collect(filePath: string): Promise<any[]> {
+  const out: any[] = [];
+  for await (const obj of iterateJsonl(filePath)) out.push(obj);
+  return out;
+}
 
 describe("extractBlocks", () => {
   it("keeps a base64 image block with its media type", () => {
@@ -61,6 +70,34 @@ describe("extractBlocks", () => {
     ]);
     expect(text).toBe("before\nafter");
     expect(text).not.toContain("HUGEBASE64");
+  });
+});
+
+describe("iterateJsonl", () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "maurice-jsonl-"));
+  });
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("yields parsed objects, skipping blank and malformed lines", async () => {
+    const file = path.join(dir, "a.jsonl");
+    fs.writeFileSync(file, ['{"a":1}', "", "  ", "not json", '{"b":2}', ""].join("\n"));
+    expect(await collect(file)).toEqual([{ a: 1 }, { b: 2 }]);
+  });
+
+  it("yields nothing (no throw) when the file vanished before reading (async ENOENT)", async () => {
+    // createReadStream doesn't throw synchronously for a missing path; the ENOENT
+    // surfaces asynchronously during iteration — this is the regression guard.
+    const gone = path.join(dir, "vanished.jsonl");
+    expect(await collect(gone)).toEqual([]);
+  });
+
+  it("propagates a non-ENOENT read error instead of masking it as empty", async () => {
+    // Reading a directory emits EISDIR asynchronously — must not be swallowed.
+    await expect(collect(dir)).rejects.toMatchObject({ code: "EISDIR" });
   });
 });
 

@@ -31,7 +31,7 @@ function OriginBadge({ origin }: { origin: AgentOrigin }) {
   const t = useT();
   const color = ORIGIN_COLOR[origin];
   return (
-    <span className="chip" style={{ color, borderColor: color + "55" }}>
+    <span className="chip" style={{ color, borderColor: `color-mix(in srgb, ${color} 33%, transparent)` }}>
       {originLabel(t, origin)}
     </span>
   );

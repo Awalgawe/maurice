@@ -1,13 +1,15 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import type { Facets, SearchHit, SessionMeta } from "../types";
-import { getFilters, getSessions, search as apiSearch } from "../api";
+import { getFilters, search as apiSearch } from "../api";
 import { skillLabel, modelLabel, totalTokens } from "../format";
 import { useSortable } from "../hooks/useSortable";
+import { useSessions } from "../hooks/useSessions";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { useFmt } from "../hooks/useFmt";
 import { useT } from "../hooks/useT";
 import { Chip } from "../components/ui/Chip";
+import { ErrorState } from "../components/ui/ErrorState";
 import { ContextBar } from "../components/ui/ContextBar";
 import { Picker } from "../components/ui/Picker";
 import { SortHeader } from "../components/ui/SortHeader";
@@ -34,9 +36,10 @@ function dayKey(iso: string | null): string {
 export default function Sessions() {
   const t = useT();
   const { fmtDate, fmtDayLong, fmtTokens, fmtCost } = useFmt();
-  const [sessions, setSessions] = useState<SessionMeta[]>([]);
+  const { sessions, status, error, reload } = useSessions(true);
   const [facets, setFacets] = useState<Facets | null>(null);
-  const [err, setErr] = useState<string | null>(null);
+  const [facetsErr, setFacetsErr] = useState<string | null>(null);
+  const [facetsNonce, setFacetsNonce] = useState(0);
 
   // Filters can be seeded from the URL (Dashboard drill-down links), read once at mount.
   const [params] = useSearchParams();
@@ -50,29 +53,39 @@ export default function Sessions() {
 
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<SearchHit[] | null>(null);
+  const [searchErr, setSearchErr] = useState<string | null>(null);
 
-  // Fetch on mount, then again whenever the window regains focus — so the live
-  // session (which keeps growing on disk) shows up without a manual reload.
+  // Facets refresh alongside the session index (also on window focus). They only
+  // populate filter options, so a failure doesn't block the table — but it's
+  // surfaced (with retry) rather than swallowed, so empty pickers aren't mistaken
+  // for "no filters available".
   useEffect(() => {
+    let live = true;
     const load = () => {
-      getSessions().then(setSessions).catch((e) => setErr(String(e)));
-      getFilters().then(setFacets).catch(() => {});
+      getFilters()
+        .then((f) => { if (live) { setFacets(f); setFacetsErr(null); } })
+        .catch((e) => { if (live) setFacetsErr(String(e)); });
     };
     load();
     window.addEventListener("focus", load);
-    return () => window.removeEventListener("focus", load);
-  }, []);
+    return () => { live = false; window.removeEventListener("focus", load); };
+  }, [facetsNonce]);
 
-  // Debounced full-text search.
+  // Debounced full-text search. The `live` guard drops a stale in-flight response
+  // so a slow earlier query can't overwrite the results of a newer one.
   useEffect(() => {
     if (query.trim().length < 3) {
       setHits(null);
+      setSearchErr(null);
       return;
     }
-    const t = setTimeout(() => {
-      apiSearch(query).then(setHits).catch(() => setHits([]));
+    let live = true;
+    const timer = setTimeout(() => {
+      apiSearch(query)
+        .then((h) => { if (live) { setHits(h); setSearchErr(null); } })
+        .catch((e) => { if (live) { setHits(null); setSearchErr(String(e)); } });
     }, 300);
-    return () => clearTimeout(t);
+    return () => { live = false; clearTimeout(timer); };
   }, [query]);
 
   const hitBySession = useMemo(
@@ -134,8 +147,9 @@ export default function Sessions() {
   const hideModel = useMediaQuery("(max-width: 1020px)");
   const visibleCols = 13 - (hideSubErr ? 2 : 0) - (hideSkills ? 1 : 0) - (hideModel ? 1 : 0);
 
-  if (err) return <div className="center">{t("sessions_error_prefix")}{err}</div>;
-  if (!sessions.length) return <div className="center">{t("sessions_loading")}</div>;
+  if (status === "error") return <ErrorState message={error} onRetry={reload} />;
+  if (status === "loading") return <div className="center">{t("sessions_loading")}</div>;
+  if (!sessions.length) return <div className="center">{t("sessions_empty")}</div>;
 
   const sortProps = { active: sortKey, dir: sortDir, onSort: toggle };
 
@@ -167,6 +181,15 @@ export default function Sessions() {
         <button className={errorsOnly ? "active" : ""} onClick={() => setErrorsOnly((v) => !v)}>
           {t("sessions_errors_only")}
         </button>
+        {searchErr && <span className="hint" style={{ color: "var(--red)" }}>{searchErr}</span>}
+        {facetsErr && (
+          <span className="hint async-error-inline" style={{ color: "var(--red)" }}>
+            {t("sessions_filters_error")}
+            <button type="button" className="retry-btn" onClick={() => setFacetsNonce((n) => n + 1)}>
+              {t("async_retry")}
+            </button>
+          </span>
+        )}
         <span className="hint">{rows.length} {t("sessions_count")}</span>
       </div>
 

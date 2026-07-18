@@ -14,12 +14,30 @@ const CACHE_DIR = path.join(__dirname, "..", "..", ".cache");
 const SEARCH_VERSION = 2; // 2: one doc per message (uuid, fork, idx) for fork-aware deep links
 
 let searchDbPath = path.join(CACHE_DIR, "search.db");
-let db: DatabaseSync | null = null;
+let db: InstanceType<typeof DatabaseSync> | null = null;
 let disabled = false;
+
+// Test-only: force a batch op to throw so the rebuild's rollback/retry path can
+// be exercised (a real COMMIT failure — disk full, corruption — is hard to induce).
+let failpoint: "upsert" | "commit" | null = null;
+export function _setFailpointForTesting(op: "upsert" | "commit" | null): void {
+  failpoint = op;
+}
 
 // Word-frequency dictionary built lazily from the indexed corpus.
 // Invalidated after any write; rebuilt on first lookup.
 let dict: Map<string, number> | null = null;
+
+// The dictionary holds the whole normalized vocabulary in memory and is rebuilt
+// by scanning every `body` after each write. Two bounds keep that finite:
+//  - above MAX_DICT_DOCS the scan is too costly to repeat, so spell-correction is
+//    disabled (empty dict → search still works, just no fuzzy suggestions);
+//  - MAX_DICT_WORDS caps the distinct vocabulary held (new words past the cap are
+//    dropped; existing ones keep counting).
+const DEFAULT_MAX_DICT_DOCS = 50_000;
+const DEFAULT_MAX_DICT_WORDS = 100_000;
+let maxDictDocs = DEFAULT_MAX_DICT_DOCS;
+let maxDictWords = DEFAULT_MAX_DICT_WORDS;
 
 function invalidateDict(): void {
   dict = null;
@@ -29,13 +47,24 @@ function getDict(): Map<string, number> {
   if (dict) return dict;
   dict = new Map();
   if (!db || disabled) return dict;
+  const count = (db.prepare("SELECT COUNT(*) AS n FROM docs").get() as { n: number }).n;
+  if (count > maxDictDocs) return dict; // corpus too large: correction disabled
   const rows = db.prepare("SELECT body FROM docs").all() as { body: string }[];
   for (const { body } of rows) {
     for (const w of body.split(/[^a-z0-9]+/)) {
-      if (w.length >= 3 && w.length <= 24) dict.set(w, (dict.get(w) || 0) + 1);
+      if (w.length < 3 || w.length > 24) continue;
+      if (!dict.has(w) && dict.size >= maxDictWords) continue; // cap distinct vocab
+      dict.set(w, (dict.get(w) || 0) + 1);
     }
   }
   return dict;
+}
+
+/** Override the dictionary bounds — for testing only. */
+export function _setDictLimitsForTesting(docs: number, words: number): void {
+  maxDictDocs = docs;
+  maxDictWords = words;
+  dict = null;
 }
 
 // NFD decompose + strip combining diacritics + lowercase so é/e both map to the same trigrams.
@@ -264,14 +293,14 @@ export function initSearchIndex(): { fresh: boolean } {
   }
 }
 
-/** Stamp the schema version once a full rebuild has completed successfully. */
+/**
+ * Stamp the schema version. Called inside the rebuild batch (before COMMIT) so
+ * the version lands atomically with the docs — never on its own. Throws on
+ * failure so the caller aborts and rolls back the whole rebuild.
+ */
 export function commitIndexVersion(): void {
   if (!db || disabled) return;
-  try {
-    db.prepare("INSERT OR REPLACE INTO meta(k, v) VALUES (?, ?)").run("version", String(SEARCH_VERSION));
-  } catch (e) {
-    console.warn("[search] version stamp failed:", e);
-  }
+  db.prepare("INSERT OR REPLACE INTO meta(k, v) VALUES (?, ?)").run("version", String(SEARCH_VERSION));
 }
 
 export interface SearchDoc {
@@ -284,6 +313,7 @@ export interface SearchDoc {
 /** Replace a session's documents: one row per text-bearing message. */
 export function upsertDocs(sessionId: string, projectId: string, docs: SearchDoc[]): void {
   if (!db || disabled) return;
+  if (failpoint === "upsert") throw new Error("[search][test] injected upsert failure");
   db.prepare("DELETE FROM docs WHERE session_id = ?").run(sessionId);
   const ins = db.prepare("INSERT INTO docs(body, session_id, project_id, uuid, fork, idx) VALUES (?, ?, ?, ?, ?, ?)");
   for (const d of docs) {
@@ -302,22 +332,34 @@ export function pruneDocs(validSessionIds: Set<string>): void {
   invalidateDict();
 }
 
+/**
+ * Open the rebuild transaction. Throws if a BEGIN fails (a transaction is
+ * already open) — with getIndex() coalesced this shouldn't happen, and swallowing
+ * it would run the upserts outside the batch and risk a cross-rebuild COMMIT.
+ */
 export function beginBatch(): void {
   if (!db || disabled) return;
-  try {
-    db.exec("BEGIN");
-  } catch {}
+  db.exec("BEGIN");
 }
 
+/**
+ * Commit the rebuild transaction. Throws on failure so the caller rolls back and
+ * the rebuild is retried next call — a partial index must never be committed nor
+ * the cache stamped as up-to-date.
+ */
 export function endBatch(): void {
   if (!db || disabled) return;
+  if (failpoint === "commit") throw new Error("[search][test] injected commit failure");
+  db.exec("COMMIT");
+}
+
+/** Best-effort rollback of an aborted rebuild transaction (error path only). */
+export function rollbackBatch(): void {
+  if (!db || disabled) return;
   try {
-    db.exec("COMMIT");
-  } catch (e) {
-    try {
-      db.exec("ROLLBACK");
-    } catch {}
-    console.warn("[search] batch commit failed:", e);
+    db.exec("ROLLBACK");
+  } catch {
+    /* nothing open to roll back */
   }
 }
 
@@ -357,6 +399,9 @@ export function _resetForTesting(dbPath: string = ":memory:"): void {
   }
   db = null;
   disabled = false;
+  failpoint = null;
   dict = null;
+  maxDictDocs = DEFAULT_MAX_DICT_DOCS;
+  maxDictWords = DEFAULT_MAX_DICT_WORDS;
   searchDbPath = dbPath;
 }

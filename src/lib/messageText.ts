@@ -33,6 +33,8 @@ function blockToText(b: ContentBlock): string {
     }
     case "tool_result":
       return b.text;
+    case "image":
+      return "";
   }
 }
 

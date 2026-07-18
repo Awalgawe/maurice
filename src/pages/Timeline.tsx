@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import type { SessionMeta } from "../types";
-import { getSessions } from "../api";
 import { colorForModel, dominantModel, modelLabel } from "../format";
 import { useFmt } from "../hooks/useFmt";
 import { useT } from "../hooks/useT";
+import { useSessions } from "../hooks/useSessions";
+import { ErrorState } from "../components/ui/ErrorState";
 
 type Pivot = "ticket" | "branch" | "project";
 
@@ -24,13 +25,9 @@ const ymd = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.ge
 export default function Timeline() {
   const t = useT();
   const { fmtCost, fmtDate, fmtDay } = useFmt();
-  const [sessions, setSessions] = useState<SessionMeta[]>([]);
+  const { sessions, status, error, reload } = useSessions();
   const [pivot, setPivot] = useState<Pivot>("ticket");
   const [range, setRange] = useState<number | null>(null); // window in days; null = all
-
-  useEffect(() => {
-    getSessions().then(setSessions).catch(() => {});
-  }, []);
 
   const { lanes, t0, span, ticks, legend, excluded, now } = useMemo(() => {
     const now = Date.now();
@@ -101,6 +98,9 @@ export default function Timeline() {
     branch: t("timeline_group_branch"),
     project: t("timeline_group_project"),
   };
+
+  if (status === "error") return <ErrorState message={error} onRetry={reload} />;
+  if (status === "loading") return <div className="center">{t("sessions_loading")}</div>;
 
   return (
     <div>
