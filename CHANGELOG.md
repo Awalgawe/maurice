@@ -2,6 +2,23 @@
 
 All notable changes to this project are documented in this file. Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/).
 
+## [0.4.0] - 2026-07-25
+
+### Added
+
+- **Claude-generated session titles** — the standalone `ai-title` line most sessions carry is now surfaced as the leading title everywhere (Sessions, Workflow, Dashboard, Session detail, MCP list/search), falling back to the first user prompt when absent.
+- **Turn durations & API reliability** — real wall-clock turn durations (`turn_duration` lines) power an active-time and average-turn readout on the Dashboard and a sortable time-per-group column in Workflow; API retries and error placeholders feed a new API-reliability panel.
+- **Friction & behavior metrics** — a Dashboard panel split into obstacles (interruptions, tool denials per-kind) and habits (permission-mode changes, prompt provenance typed / SDK / other), parsed from structured signals on user lines.
+- **Hooks execution analytics** — the Hooks page gains an executions table (fires, average latency, async responses, errors, sessions) aggregated from hook attachment lines, merged with the existing `settings.json` config view. Numbers only — command/stdout/stderr are never stored.
+- **Per-tool analytics, compaction markers & files touched** — per-session usage and error counts for every tool (not just MCP) drive a Dashboard top-tools panel; `compact_boundary` lines become amber dashed markers on the detail context curve; file-history snapshots become a files-touched count on the detail panel.
+
+### Fixed
+
+- **Cache-write pricing per TTL tier** — cache creation is now priced from its `ephemeral_5m` / `ephemeral_1h` split instead of billing every write at the 5-minute rate, which undercosted 1-hour writes by ~60%.
+- **Detail token accuracy** — per-message tokens are attributed to a request's first JSONL line only, so multi-block turns no longer over-count; denials and rewrite causes now read structured fields.
+- **Nested subagent discovery** — workflow-spawned agent transcripts nested under `subagents/workflows/` are now discovered recursively.
+- **Cost bar underfill** — stacked cost bars for sub-$1 totals now fill completely (grow factors normalized to sum to 1).
+
 ## [0.3.0] - 2026-07-16
 
 ### Added

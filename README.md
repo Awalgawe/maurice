@@ -32,6 +32,10 @@ Complements `ccusage` (CLI costs) and `awa:skill-stats`: here you **explore and 
 
 ![Agents](docs/screenshots/agents.png)
 
+**Hooks** — configured hook commands plus execution analytics (fires, average latency, async responses, errors) aggregated from what actually ran.
+
+![Hooks](docs/screenshots/hooks.png)
+
 ## Getting started
 
 ```bash
@@ -49,15 +53,15 @@ npm start        # serves dist/ + API on http://localhost:5174
 
 ## What it shows
 
-- **Dashboard** — analytics overview over a period (7 / 30 / 90 days / all): KPIs (cost, tokens, sessions, cost per session, cache-hit %, error rate), activity charts (cost & sessions over time, day×hour heatmap), cost breakdown by model / skill / project, most expensive sessions, token composition, context-peak distribution, and MCP tool usage. Cards link through to filtered Sessions.
-- **Sessions** — all sessions: project, ticket, skills, date, messages, tokens, **estimated cost**, **peak context window fill**, error badge, subagent count. Full-text search + filters (project / ticket / skill / model / MCP / errors). Includes a **branch column** and an **active session indicator** in the topbar.
-- **Detail** — readable thread (errors highlighted, thoughts collapsible), context window fill curve (drop = compaction, dashed markers on **model switches**, per-model window %), cost/token panel with a **cost breakdown table** merging tokens and estimated cost per component (input / output / cache read / cache write / subagents) with a stacked bar strip, **MCP** tools called, **subagents** (clickable transcripts, own cost surfaced, unified with the session view), and a "copy `claude --resume <id>`" button. First/last page navigation buttons (⟪ / ⟫). Renders **inline images** embedded in the thread — both uploaded images and those returned by MCP tool results. Navigate into/out of **rewind-abandoned thread forks**, with a deep link back to the divergence point. A quick-nav panel jumps straight to any **prompt-cache rewrite** warning in the thread.
+- **Dashboard** — analytics overview over a period (7 / 30 / 90 days / all): KPIs (cost, tokens, sessions, cost per session, cache-hit %, error rate), activity charts (cost & sessions over time, day×hour heatmap), cost breakdown by model / skill / project, most expensive sessions, token composition, context-peak distribution, and MCP tool usage. A **health** section adds per-tool usage with error counts, a **friction & behavior** panel split into obstacles (interruptions, tool denials) and habits (permission-mode changes, prompt provenance), and **API reliability** counters; **averages** surface active time and mean turn duration. Cards link through to filtered Sessions.
+- **Sessions** — all sessions, led by their **Claude-generated title** (falling back to the first prompt): project, ticket, skills, date, messages, tokens, **estimated cost**, **peak context window fill**, error badge, subagent count. Full-text search + filters (project / ticket / skill / model / MCP / errors). Includes a **branch column** and an **active session indicator** in the topbar.
+- **Detail** — readable thread (errors highlighted, thoughts collapsible), context window fill curve (drop = compaction, amber markers on **compaction boundaries**, dashed markers on **model switches**, per-model window %), a **files touched** count, cost/token panel with a **cost breakdown table** merging tokens and estimated cost per component (input / output / cache read / cache write / subagents) with a stacked bar strip, **MCP** tools called, **subagents** (clickable transcripts, own cost surfaced, unified with the session view), and a "copy `claude --resume <id>`" button. First/last page navigation buttons (⟪ / ⟫). Renders **inline images** embedded in the thread — both uploaded images and those returned by MCP tool results. Navigate into/out of **rewind-abandoned thread forks**, with a deep link back to the divergence point. A quick-nav panel jumps straight to any **prompt-cache rewrite** warning in the thread.
 - **Cache rewrite warnings** — the provider's prompt cache expires after ~5min idle, so returning to a session after a break re-writes the whole context at the cache-write rate instead of reading it. Maurice detects this per billed request (idle vs. context-edit cause), flags it inline on the message, and aggregates it per session (count + estimated wasted cost) as a sortable column in Sessions.
-- **Workflow** — sessions pivoted by **skill** (default), ticket, or branch, with per-group aggregates. Tokens/cost in the skill pivot are attributed **per message** (`attributionSkill`), so no double-counting across skills.
+- **Workflow** — sessions pivoted by **skill** (default), ticket, or branch, with per-group aggregates including a sortable **time-per-group** column. Tokens/cost in the skill pivot are attributed **per message** (`attributionSkill`), so no double-counting across skills.
 - **Timeline** — Gantt-style view of sessions as time-positioned bars, grouped into lanes by **ticket** (default), branch, or project, colored by model, with a period filter.
 - **Memory** — browse and **delete** entries from `~/.claude/projects/*/memory/`.
 - **Plans** — browse, **rename** and **delete** plan-mode markdown files from `~/.claude/plans/` (global) and each project's `.claude/plans/`, grouped by date / folder / ticket.
-- **Hooks** — browse the hook commands configured in `settings.json` (global / project, plus their `.local` variants), grouped by event and filterable by scope.
+- **Hooks** — browse the hook commands configured in `settings.json` (global / project, plus their `.local` variants), grouped by event and filterable by scope, alongside **execution analytics** (fires, average latency, async responses, errors) aggregated from what actually ran.
 - **Agents** — registry of every subagent type seen in your history, joined with its on-disk definition (builtin / custom / plugin) and usage across sessions.
 - **MCP** — install instructions for the MCP server (see below) and the live list of its tools — parameters, types, descriptions — sourced from the server itself so it never drifts.
 - **Bilans** — periodic summaries generated by the `awa:bilan` skill, listing completed work and key decisions per period.
