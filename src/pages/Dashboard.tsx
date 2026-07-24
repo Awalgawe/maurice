@@ -139,6 +139,10 @@ export default function Dashboard() {
     let interruptionCount = 0;
     const denialCounts: Record<string, number> = {};
     const promptCounts: Record<string, number> = {};
+    // permission-mode lines carry no timestamp, so this is a session property
+    // (like ctxBuckets/durations below) rather than a byDay-windowed sum.
+    let permissionModeChanges = 0;
+    const permissionModesSeen = new Set<string>();
     // Per-session windowed cost/tokens/errors, so error rate and the top-sessions
     // list describe the selected period — not the sessions' full-lifetime totals.
     const perSession: { s: SessionMeta; cost: number; tokens: number; errors: number }[] = [];
@@ -177,6 +181,9 @@ export default function Dashboard() {
       else if (pct < 50) ctxBuckets[1]++;
       else if (pct < 75) ctxBuckets[2]++;
       else ctxBuckets[3]++;
+
+      permissionModeChanges += s.permissionModeChanges ?? 0;
+      for (const m of s.permissionModes ?? []) permissionModesSeen.add(m);
 
       // Cost: spread across the days the session actually spanned (per-message).
       for (const [day, c] of Object.entries(s.costByDay ?? {})) {
@@ -244,6 +251,7 @@ export default function Dashboard() {
       workMs, avgTurnMs: turnCount > 0 ? workMs / turnCount : 0,
       apiRetryCount, apiErrorMessageCount,
       interruptionCount, denialCounts, promptCounts,
+      permissionModeChanges, permissionModes: [...permissionModesSeen],
       cacheHitPct,
       compVolume: [inTok, outTok, crTok, ccTok],
       compCost: [costComp.input, costComp.output, costComp.cacheRead, costComp.cacheCreate],
@@ -620,34 +628,48 @@ export default function Dashboard() {
             </div>
           </Panel>
 
-          {/* Friction */}
+          {/* Friction & comportement: deux natures de signaux (obstacles subis vs.
+              habitudes de conduite du travail) — groupées, pas mélangées sous un
+              même intitulé "friction". */}
           <Panel title={t("dashboard_friction_title")}>
-            <div className="dash-stat-row">
-              <span className="dash-stat-label">{t("dashboard_friction_interruptions")}</span>
-              <span className="dash-stat-val">{agg.interruptionCount}</span>
+            <div className="dash-comp-block">
+              <span className="dash-comp-title">{t("dashboard_friction_group_obstacles")}</span>
+              <div className="dash-stat-row">
+                <span className="dash-stat-label">{t("dashboard_friction_interruptions")}</span>
+                <span className="dash-stat-val">{agg.interruptionCount}</span>
+              </div>
+              <div className="dash-stat-row">
+                <span className="dash-stat-label">{t("dashboard_friction_denials")}</span>
+                <span className="dash-stat-val"
+                  title={Object.entries(agg.denialCounts).map(([k, v]) => `${k}: ${v}`).join(" · ")}>
+                  {Object.values(agg.denialCounts).reduce((a, b) => a + b, 0)}
+                </span>
+              </div>
             </div>
-            <div className="dash-stat-row">
-              <span className="dash-stat-label">{t("dashboard_friction_denials")}</span>
-              <span className="dash-stat-val"
-                title={Object.entries(agg.denialCounts).map(([k, v]) => `${k}: ${v}`).join(" · ")}>
-                {Object.values(agg.denialCounts).reduce((a, b) => a + b, 0)}
-              </span>
-            </div>
-            <div className="dash-stat-row">
-              <span className="dash-stat-label">{t("dashboard_friction_prompts_typed")}</span>
-              <span className="dash-stat-val">{agg.promptCounts.typed ?? 0}</span>
-            </div>
-            <div className="dash-stat-row">
-              <span className="dash-stat-label">{t("dashboard_friction_prompts_sdk")}</span>
-              <span className="dash-stat-val">{agg.promptCounts.sdk ?? 0}</span>
-            </div>
-            <div className="dash-stat-row">
-              <span className="dash-stat-label">{t("dashboard_friction_prompts_other")}</span>
-              <span className="dash-stat-val">
-                {Object.entries(agg.promptCounts)
-                  .filter(([k]) => k !== "typed" && k !== "sdk")
-                  .reduce((a, [, v]) => a + v, 0)}
-              </span>
+            <div className="dash-comp-block">
+              <span className="dash-comp-title">{t("dashboard_friction_group_habits")}</span>
+              <div className="dash-stat-row">
+                <span className="dash-stat-label">{t("dashboard_friction_mode_changes")}</span>
+                <span className="dash-stat-val" title={agg.permissionModes.join(" · ")}>
+                  {agg.permissionModeChanges}
+                </span>
+              </div>
+              <div className="dash-stat-row">
+                <span className="dash-stat-label">{t("dashboard_friction_prompts_typed")}</span>
+                <span className="dash-stat-val">{agg.promptCounts.typed ?? 0}</span>
+              </div>
+              <div className="dash-stat-row">
+                <span className="dash-stat-label">{t("dashboard_friction_prompts_sdk")}</span>
+                <span className="dash-stat-val">{agg.promptCounts.sdk ?? 0}</span>
+              </div>
+              <div className="dash-stat-row">
+                <span className="dash-stat-label">{t("dashboard_friction_prompts_other")}</span>
+                <span className="dash-stat-val">
+                  {Object.entries(agg.promptCounts)
+                    .filter(([k]) => k !== "typed" && k !== "sdk")
+                    .reduce((a, [, v]) => a + v, 0)}
+                </span>
+              </div>
             </div>
           </Panel>
 
