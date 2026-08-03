@@ -55,6 +55,20 @@ describe("windowSession", () => {
     expect(w.tokens.output).toBe(20);
   });
 
+  it("excludes days after the upper bound", () => {
+    const w = windowSession(byDay, null, "2026-01-03");
+    expect(w.cost).toBeCloseTo(1);
+    expect(w.errorCount).toBe(2);
+    expect(w.tokens.input).toBe(10);
+    expect(w.tokens.output).toBe(0);
+  });
+
+  it("keeps only the days inside a closed range, bounds included", () => {
+    expect(windowSession(byDay, "2026-01-01", "2026-01-05").errorCount).toBe(5);
+    expect(windowSession(byDay, "2026-01-02", "2026-01-04").errorCount).toBe(0);
+    expect(windowSession(byDay, "2026-01-05", "2026-01-05").errorCount).toBe(3);
+  });
+
   it("maps heatByHour to Monday-first dow*24+hour slots", () => {
     // 2026-01-01 is a Thursday → Monday-first weekday index 3.
     const bd = { "2026-01-01": mkDay({ heatByHour: { "9": 4 } }) };

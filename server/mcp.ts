@@ -7,6 +7,7 @@ import { buildAgentRows } from "./parsers/agents.ts";
 import { listBilans, readBilan } from "./parsers/bilans.ts";
 import { searchDocs } from "./parsers/searchIndex.ts";
 import { computeFacets } from "./facets.ts";
+import { computePeriodSummary } from "./periodSummary.ts";
 import type { SearchHit, SessionMeta, TokenTotals } from "../src/types.ts";
 
 /** Wrap any JSON-serialisable value as an MCP text content result. */
@@ -343,6 +344,39 @@ export function createMcpServer(): McpServer {
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     async () => json(computeFacets(await getIndex())),
+  );
+
+  server.registerTool(
+    "period_summary",
+    {
+      title: "Period summary",
+      description:
+        "Aggregate friction signals, cost and tokens over a closed day range, using each session's per-day " +
+        "breakdown so a session straddling a bound only contributes the days inside it. `friction` is day-exact; " +
+        "`undated` holds session-level counters (permission-mode changes, compactions, hook errors) attributed by " +
+        "session start date, so they are not exact to the day. A non-zero `sessionsMissingByDay` means some " +
+        "sessions predate the per-day cache and the totals under-report. Cost is an estimate, not exact billing.",
+      inputSchema: {
+        from: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/)
+          .optional()
+          .describe("Inclusive start day, YYYY-MM-DD (omit for unbounded)"),
+        to: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/)
+          .optional()
+          .describe("Inclusive end day, YYYY-MM-DD (omit for unbounded)"),
+        project: z.string().optional().describe("Limit to sessions matching this project id/label/path substring"),
+      },
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    async ({ from, to, project }) => {
+      if (from && to && from > to) {
+        return { isError: true, content: [{ type: "text" as const, text: "from must not be after to" }] };
+      }
+      return json(computePeriodSummary(await getIndex(), { from, to, project }));
+    },
   );
 
   return server;

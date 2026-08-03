@@ -14,6 +14,7 @@ import { listBilans, readBilan } from "../parsers/bilans.ts";
 import { sessionFilePath, subagentsDir, PROJECTS_DIR } from "../claudeDir.ts";
 import { searchDocs } from "../parsers/searchIndex.ts";
 import { computeFacets } from "../facets.ts";
+import { computePeriodSummary } from "../periodSummary.ts";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { createMcpServer } from "../mcp.ts";
@@ -199,6 +200,20 @@ api.get("/filters", async (_req, res) => {
   const facets = computeFacets(index);
   facetsMemo = { src: index, facets };
   res.json(facets);
+});
+
+const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+api.get("/period-summary", async (req, res) => {
+  const from = String(req.query.from || "").trim();
+  const to = String(req.query.to || "").trim();
+  if (from && !DAY_RE.test(from)) return res.status(400).json({ error: "from must be YYYY-MM-DD" });
+  if (to && !DAY_RE.test(to)) return res.status(400).json({ error: "to must be YYYY-MM-DD" });
+  if (from && to && from > to) return res.status(400).json({ error: "from must not be after to" });
+
+  const project = String(req.query.project || "").trim();
+  const index = await getIndex();
+  res.json(computePeriodSummary(index, { from: from || null, to: to || null, project: project || null }));
 });
 
 async function findMeta(id: string): Promise<SessionMeta | undefined> {

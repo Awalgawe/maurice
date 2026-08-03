@@ -26,6 +26,7 @@ describe("createMcpServer", () => {
       "list_bilans",
       "list_memories",
       "list_sessions",
+      "period_summary",
       "read_bilan",
       "recent_errors",
       "search_sessions",

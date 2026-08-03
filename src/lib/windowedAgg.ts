@@ -48,10 +48,15 @@ function dowOf(day: string): number {
  * ("YYYY-MM-DD"), or over all days when `cutoffDay` is null. Lets the Dashboard
  * window every decomposable KPI on the same period as the daily charts, instead
  * of counting a whole session because its last activity landed in the window.
+ *
+ * `untilDay` closes the interval on the right (inclusive) for callers that need
+ * a bounded period rather than "everything since": the Dashboard passes only a
+ * cutoff, `computePeriodSummary` passes both ends.
  */
 export function windowSession(
   byDay: Record<string, DayAgg> | undefined,
   cutoffDay: string | null,
+  untilDay: string | null = null,
 ): WindowedTotals {
   const out: WindowedTotals = {
     cost: 0,
@@ -78,6 +83,7 @@ export function windowSession(
   if (!byDay) return out;
   for (const [day, agg] of Object.entries(byDay)) {
     if (cutoffDay && day < cutoffDay) continue;
+    if (untilDay && day > untilDay) continue;
     addTok(out.tokens, agg.tokens);
     addTok(out.costByComponent, agg.costByComponent);
     out.cost += agg.costByComponent.input + agg.costByComponent.output + agg.costByComponent.cacheRead + agg.costByComponent.cacheCreate;

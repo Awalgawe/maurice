@@ -323,6 +323,67 @@ export interface Facets {
   mcpTools: { value: string; count: number }[];
 }
 
+/** Friction signals summable per day, so exact over any date range. */
+export interface PeriodFriction {
+  interruptionCount: number;
+  errorCount: number;
+  apiRetryCount: number;
+  apiErrorMessageCount: number;
+  denialCounts: Record<string, number>;
+  promptCounts: Record<string, number>;
+  toolErrors: Record<string, number>;
+}
+
+/**
+ * Session-level scalars with no per-day breakdown: `permission-mode` lines carry
+ * no timestamp, and compaction/hook error counts aren't bucketed by day. They
+ * are attributed to a period by the session's **start date**, so a session
+ * straddling the period bound contributes all of its count to whichever side its
+ * start falls on. Reported separately from `PeriodFriction` so a caller can't
+ * mistake them for day-exact figures.
+ */
+export interface PeriodUndated {
+  permissionModeChanges: number;
+  compactCount: number;
+  hookErrorCount: number;
+  permissionModes: string[]; // distinct modes seen across the period's sessions
+}
+
+export interface PeriodProject {
+  projectId: string;
+  projectLabel: string;
+  sessions: number;
+  estCostUSD: number;
+  friction: PeriodFriction;
+}
+
+/** One session retained by the period filter, ranked by friction weight. */
+export interface PeriodSession {
+  id: string;
+  projectLabel: string;
+  start: string | null;
+  end: string | null;
+  estCostUSD: number;
+  frictionScore: number; // sum of the windowed friction signals — ranking only, not a metric
+}
+
+export interface PeriodSummary {
+  from: string | null; // inclusive "YYYY-MM-DD", null = unbounded
+  to: string | null; // inclusive
+  sessionCount: number;
+  activeDays: number; // distinct local days with activity in the window
+  estCostUSD: number;
+  tokens: TokenTotals;
+  friction: PeriodFriction;
+  undated: PeriodUndated;
+  byProject: PeriodProject[];
+  sessions: PeriodSession[];
+  // Sessions whose cache entry predates the per-day breakdown (byDay, cache v22)
+  // and so contribute nothing to the windowed figures. Non-zero means the totals
+  // under-report; a reparse fixes it.
+  sessionsMissingByDay: number;
+}
+
 export interface SearchHit {
   sessionId: string;
   projectId: string;
