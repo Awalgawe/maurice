@@ -115,18 +115,20 @@ describe("context curve per-model windows", () => {
 
   const ctxLines = [
     human("u1", null, "start", "2026-01-01T10:00:00Z"),
-    // 100k on Sonnet (200k window) → 50%
+    // 100k on Sonnet 4.5 (200k window) → 50%
     assistant("a1", "u1", "c1", "2026-01-01T10:00:05Z",
-      { usage: { input_tokens: 100_000, output_tokens: 5 } }),
+      { model: "claude-sonnet-4-5", usage: { input_tokens: 100_000, output_tokens: 5 } }),
     // Same 100k on Fable (1M window) → 10%: model change vs a1
     assistant("a2", "a1", "c2", "2026-01-01T10:01:05Z",
       { model: "claude-fable-5", usage: { input_tokens: 100_000, output_tokens: 5 } }),
     // Subagent turn: flagged sidechain so the UI skips it for markers
     assistant("a3", "a2", "c3", "2026-01-01T10:02:05Z",
       { model: "claude-fable-5", sidechain: true, usage: { input_tokens: 50_000, output_tokens: 5 } }),
-    // 300k on Sonnet with the 1M beta suffix → 30% (old global window clamped this to 100%)
+    // 300k on a 200k-window Sonnet with the 1M beta suffix → 30% (old global
+    // window clamped this to 100%). The suffix must beat the family default,
+    // so this stays on a model whose native window is 200k.
     assistant("a4", "a3", "c4", "2026-01-01T10:03:05Z",
-      { model: "claude-sonnet-4-6[1m]", usage: { input_tokens: 300_000, output_tokens: 5 } }),
+      { model: "claude-sonnet-4-5[1m]", usage: { input_tokens: 300_000, output_tokens: 5 } }),
   ];
 
   it("computes per-point pct over each turn's model window", async () => {
@@ -136,11 +138,11 @@ describe("context curve per-model windows", () => {
     const meta3 = await buildMeta({ id: CTX_SESSION, projectId: PROJECT, filePath: fp3, size: stat3.size, mtimeMs: stat3.mtimeMs });
     const d = await readDetail(meta3, 0, 100);
     expect(d!.context).toHaveLength(4);
-    expect(d!.context[0]).toMatchObject({ pct: 50, model: "claude-sonnet-4-6" });
+    expect(d!.context[0]).toMatchObject({ pct: 50, model: "claude-sonnet-4-5" });
     expect(d!.context[0].sidechain).toBeUndefined();
     expect(d!.context[1]).toMatchObject({ pct: 10, model: "claude-fable-5" });
     expect(d!.context[2]).toMatchObject({ model: "claude-fable-5", sidechain: true });
-    expect(d!.context[3]).toMatchObject({ pct: 30, model: "claude-sonnet-4-6[1m]" });
+    expect(d!.context[3]).toMatchObject({ pct: 30, model: "claude-sonnet-4-5[1m]" });
     // Peak pct is the max of per-turn ratios (the 50% Sonnet turn), while the
     // raw token peak comes from the 300k [1m] turn — the pair proves the pct
     // is no longer rawMax/globalWindow.
