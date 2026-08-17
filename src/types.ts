@@ -344,9 +344,12 @@ export interface ActiveSession {
   model: string | null;
 }
 
+export type BilanFormat = "md" | "html";
+
 export interface BilanMeta {
   id: string;
   filename: string;
+  format: BilanFormat;
   date: string;
   periodStart: string | null;
   periodEnd: string | null;

@@ -200,8 +200,10 @@ export function createMcpServer(): McpServer {
     "read_bilan",
     {
       title: "Read bilan",
-      description: "Read a single bilan's full markdown body by id.",
-      inputSchema: { id: z.string().describe("Bilan id (filename without .md)") },
+      description:
+        "Read a single bilan's full body by id — markdown, or a standalone HTML " +
+        "document when the bilan's format is \"html\".",
+      inputSchema: { id: z.string().describe("Bilan id, as returned by list_bilans") },
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     async ({ id }) => {
