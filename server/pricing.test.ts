@@ -48,7 +48,7 @@ describe("contextWindowFor", () => {
   });
 
   it("honors the [1m] beta suffix over the family default", () => {
-    expect(contextWindowFor("claude-sonnet-4-6[1m]")).toBe(1_000_000);
+    expect(contextWindowFor("claude-sonnet-4-5[1m]")).toBe(1_000_000);
   });
 
   it("gives Opus 4.5+ a native 1M window", () => {
@@ -57,13 +57,14 @@ describe("contextWindowFor", () => {
     expect(contextWindowFor("claude-opus-5")).toBe(1_000_000);
   });
 
-  it("gives Sonnet 5+ a native 1M window", () => {
+  it("gives Sonnet 4.6+ a native 1M window", () => {
+    expect(contextWindowFor("claude-sonnet-4-6")).toBe(1_000_000);
     expect(contextWindowFor("claude-sonnet-5")).toBe(1_000_000);
   });
 
   it("keeps 200k for older versions and Haiku, ignoring date suffixes", () => {
     expect(contextWindowFor("claude-opus-4-1-20250805")).toBe(200_000);
-    expect(contextWindowFor("claude-sonnet-4-6")).toBe(200_000);
+    expect(contextWindowFor("claude-sonnet-4-5-20250929")).toBe(200_000);
     expect(contextWindowFor("claude-haiku-4-5-20251001")).toBe(200_000);
   });
 

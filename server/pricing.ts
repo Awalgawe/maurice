@@ -46,8 +46,9 @@ function priceFor(model: string | null | undefined): ModelPrice {
 
 /** Context window (tokens) for a model id. A "[1m]" suffix on the id means the
  *  1M-context beta is enabled, regardless of family. Fable, Opus 4.5+ and
- *  Sonnet 5+ ship a native 1M window without the suffix (observed >200k
- *  contexts in real logs for all three). */
+ *  Sonnet 4.6+ ship a native 1M window without the suffix. Sonnet 4.6 is a
+ *  documented 1M window even though real logs never showed one above 200k —
+ *  don't narrow these rules back to what the logs happen to exhibit. */
 export function contextWindowFor(model: string | null | undefined): number {
   const m = (model || "").toLowerCase();
   if (m.includes("[1m]")) return 1_000_000;
@@ -61,7 +62,7 @@ export function contextWindowFor(model: string | null | undefined): number {
   const opus = version("opus");
   if (opus && (opus[0] > 4 || (opus[0] === 4 && opus[1] >= 5))) return 1_000_000;
   const sonnet = version("sonnet");
-  if (sonnet && sonnet[0] >= 5) return 1_000_000;
+  if (sonnet && (sonnet[0] > 4 || (sonnet[0] === 4 && sonnet[1] >= 6))) return 1_000_000;
   return CONTEXT_WINDOW; // env fallback (default 200k) — also null / pseudo-models
 }
 
