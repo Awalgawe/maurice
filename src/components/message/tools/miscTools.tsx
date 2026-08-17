@@ -110,8 +110,11 @@ export function PushNotificationInput({ input }: { input: Record<string, unknown
   );
 }
 
-/** Generic JSON fallback for tools without a dedicated renderer. */
-export function ToolInput({ input }: { input: unknown }) {
+/**
+ * Serialised tool input, or null when there is nothing worth showing.
+ * Shared with the block-level copy button so both agree on what "empty" means.
+ */
+export function toolInputJson(input: unknown): string | null {
   if (input == null) return null;
   let s: string;
   try {
@@ -119,15 +122,20 @@ export function ToolInput({ input }: { input: unknown }) {
   } catch {
     return null;
   }
-  if (s === "{}" || s === "null" || s === '""') return null;
+  return s === "{}" || s === "null" || s === '""' ? null : s;
+}
+
+/** Generic JSON fallback for tools without a dedicated renderer. */
+export function ToolInput({ input }: { input: unknown }) {
+  const s = toolInputJson(input);
+  if (s === null) return null;
   const truncated = s.length > 3000 ? s.slice(0, 3000) + "\n…" : s;
   const html = highlightCode(truncated, "json");
-  if (html) {
-    return (
-      <pre className="json-view">
-        <code className="hljs language-json" dangerouslySetInnerHTML={{ __html: html }} />
-      </pre>
-    );
-  }
-  return <pre className="json-view"><code>{truncated}</code></pre>;
+  return (
+    <pre className="json-view">
+      {html
+        ? <code className="hljs language-json" dangerouslySetInnerHTML={{ __html: html }} />
+        : <code>{truncated}</code>}
+    </pre>
+  );
 }
