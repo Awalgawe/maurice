@@ -498,7 +498,7 @@ tr.day-row td { background: var(--panel); color: var(--muted); font-size: 12px; 
 .msg-copy.copied { color: var(--green); }
 .block { margin: 6px 0; }
 .block.thinking { color: var(--muted); font-style: italic; border-left: 2px solid var(--border); padding-left: 10px; }
-.block.tool_use { font-family: var(--mono); font-size: 12px; background: var(--panel-2); padding: 8px 10px; border-radius: 6px; overflow-wrap: anywhere; word-break: break-word; }
+.block.tool_use { position: relative; font-family: var(--mono); font-size: 12px; background: var(--panel-2); padding: 8px 36px 8px 10px; border-radius: 6px; overflow-wrap: anywhere; word-break: break-word; }
 .bash-desc { font-style: italic; font-family: sans-serif; font-size: 12px; }
 .bash-cmd { margin: 6px 0 0; padding: 6px 8px; background: var(--bg); border-radius: 4px; border-left: 2px solid var(--accent); white-space: pre-wrap; word-break: break-all; font-size: 12px; }
 .file-path { margin-left: 6px; }
@@ -527,16 +527,37 @@ tr.day-row td { background: var(--panel); color: var(--muted); font-size: 12px; 
 .todo-status.cancelled { color: var(--muted); }
 .block.tool_use .tname { color: var(--accent); }
 .block.tool_use .tname.mcp { color: var(--amber); }
-.block.tool_result { font-family: var(--mono); font-size: 12px; background: var(--panel-2); padding: 8px 10px; border-radius: 6px; white-space: pre-wrap; max-height: 240px; overflow: auto; }
+.block.tool_result { font-family: var(--mono); font-size: 12px; background: var(--panel-2); padding: 8px 36px 8px 10px; border-radius: 6px; white-space: pre-wrap; max-height: 240px; overflow: auto; }
 .block.tool_result.err { background: var(--msg-err-bg); color: #fca5a5; }
 .block.image img { max-width: 100%; max-height: 480px; border-radius: var(--radius-sm); border: 1px solid var(--border); display: block; }
 .block.image.tool-result-images { display: flex; flex-wrap: wrap; gap: 8px; }
 .markdown { line-height: 1.55; overflow-wrap: anywhere; }
-.markdown pre { background: var(--panel-2); padding: 10px; border-radius: 6px; overflow: auto; }
+.markdown pre { background: var(--panel-2); padding: 10px 36px 10px 10px; border-radius: 6px; }
 .markdown code { font-family: var(--mono); font-size: 12px; }
 /* hljs overrides — background already provided by pre */
 .markdown pre code.hljs { background: transparent; padding: 0; }
+/* Per-block copy button. `.copy-float` needs a non-scrolling positioned host,
+   otherwise it drifts away with the content: `.md-pre` moves its scroll to the
+   inner <code>, and the blocks that scroll themselves get a `.copy-host` wrapper. */
+.md-pre { position: relative; padding-right: 36px; }
+.md-pre > code { display: block; overflow-x: auto; }
+.copy-host { position: relative; }
+.copy-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  color: var(--muted);
+  transition: color .12s, border-color .12s;
+}
+.copy-btn:hover { color: var(--accent); border-color: var(--accent); }
+.copy-btn.copied { color: var(--green); border-color: var(--green); }
+.copy-float { position: absolute; top: 6px; right: 6px; }
 /* Standalone JSON view (tool_use fallback, tool_result JSON, ToolInput) */
+/* Right padding lives on the visible parent box (.block.tool_use /
+   .block.tool_result), which is what the copy button is anchored to. */
 .json-view {
   background: var(--panel-2);
   border-radius: 6px;

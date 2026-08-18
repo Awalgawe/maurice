@@ -3,6 +3,7 @@ import type { ContentBlock } from "../../types";
 import { useT } from "../../hooks/useT";
 import { ansiToHtml } from "../../lib/ansi";
 import { highlightCode } from "../../lib/highlight";
+import { CopyButton } from "../ui/CopyButton";
 
 // Long outputs are collapsed to a preview so a huge tool_result doesn't blow up
 // the thread — but the full text is always reachable via the toggle, never
@@ -46,23 +47,29 @@ export function ToolResultBlock({ b }: { b: Extract<ContentBlock, { kind: "tool_
 
   return (
     <>
-      <div className={"block tool_result" + (b.isError ? " err" : "")}>
-        {reminder && (
-          <details className="tool-reminder">
-            <summary>⚠ {t("tool_result_reminder")}</summary>
-            <span>{reminder}</span>
-          </details>
-        )}
-        {bodyNode ??
-          (!reminder && !hasImages && <span className="muted">{t("tool_result_empty")}</span>)}
-        {truncated && (
-          <div className="tool-result-more">
-            {!expanded && <span className="muted">{t("tool_result_truncated")}</span>}
-            <button type="button" className="tool-result-toggle" onClick={() => setExpanded((v) => !v)}>
-              {expanded ? t("tool_result_collapse") : t("tool_result_show_all")}
-            </button>
-          </div>
-        )}
+      {/* The block itself is the scroller (max-height), so the button is anchored
+          to a wrapper — otherwise it scrolls away with the output. */}
+      <div className="copy-host">
+        <div className={"block tool_result" + (b.isError ? " err" : "")}>
+          {reminder && (
+            <details className="tool-reminder">
+              <summary>⚠ {t("tool_result_reminder")}</summary>
+              <span>{reminder}</span>
+            </details>
+          )}
+          {bodyNode ??
+            (!reminder && !hasImages && <span className="muted">{t("tool_result_empty")}</span>)}
+          {truncated && (
+            <div className="tool-result-more">
+              {!expanded && <span className="muted">{t("tool_result_truncated")}</span>}
+              <button type="button" className="tool-result-toggle" onClick={() => setExpanded((v) => !v)}>
+                {expanded ? t("tool_result_collapse") : t("tool_result_show_all")}
+              </button>
+            </div>
+          )}
+        </div>
+        {/* Copies the whole body, not the 4000-char preview. */}
+        {body && <CopyButton className="copy-float" label="code_copy_output" text={body} />}
       </div>
       {hasImages && (
         <div className="block image tool-result-images">
