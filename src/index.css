@@ -534,6 +534,22 @@ tr.day-row td { background: var(--panel); color: var(--muted); font-size: 12px; 
 @keyframes msg-flash { 0%, 40% { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); } 100% { box-shadow: none; } }
 /* Fork navigation: banner over the thread + divergence line between turns,
    both in the same --fork color as the minimap dash. */
+/* Cross-file continuation (SessionContinuity): the transcript being read is one
+   file of a conversation that carried on under another session id. Same ⑂ hue as
+   the intra-file fork affordances — the reader learns one code for "branch". */
+/* Two columns (label, targets) shared by every row through subgrid, so several
+   relations line up their targets without splitting a row's label from them. */
+.continuity-banner { display: grid; grid-template-columns: max-content 1fr; gap: 6px 12px; padding: 9px 12px; margin-bottom: 16px; font-size: 13px; border: 1px dashed var(--fork); border-left: 3px solid var(--fork); border-radius: 10px; background: color-mix(in srgb, var(--fork) 8%, transparent); }
+.continuity-row { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; align-items: center; }
+.continuity-refs { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.continuity-label { color: var(--fork); font-weight: 600; }
+/* Each target is one object, so two of them side by side can't read as one run
+   of text — hence the chip, not an underline. */
+.continuity-link { display: inline-flex; align-items: baseline; gap: 8px; padding: 2px 9px; color: var(--text); text-decoration: none; background: var(--panel); border: 1px solid var(--border); border-radius: 999px; transition: border-color .12s; }
+.continuity-link:hover { border-color: var(--fork); }
+.continuity-id { font-family: var(--mono); font-size: 12px; }
+.continuity-title { max-width: 24em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.continuity-link .muted { font-size: 12px; }
 .fork-banner { display: flex; align-items: center; gap: 10px; padding: 8px 12px; margin-bottom: 12px; border: 1px dashed var(--fork); border-radius: 10px; background: var(--panel); font-size: 13px; }
 .fork-diverge { display: flex; align-items: center; gap: 8px; margin: -4px 0 12px; padding: 6px 12px; font-size: 12px; color: var(--text); border: 1px dashed var(--fork); border-left: 3px solid var(--fork); border-radius: 10px; background: color-mix(in srgb, var(--fork) 8%, transparent); }
 .fork-diverge > span { color: var(--fork); font-weight: 600; }

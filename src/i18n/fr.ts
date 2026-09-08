@@ -169,6 +169,12 @@ export const fr = {
   detail_fork_banner: "Vous regardez une branche abandonnée (rewind)",
   detail_fork_back: "→ Revenir au fil actif",
   detail_fork_diverges: "⑂ Le fil se sépare ici :",
+  continuity_in: "Transcription partielle — la conversation se poursuit dans :",
+  continuity_from: "Suite de :",
+  continuity_duplicate: "Copie identique :",
+  continuity_diverged: "Branche divergente :",
+  continuity_evidence:
+    "Même conversation : ces transcriptions partagent leur séquence de requêtes API (rewind ou reprise sous un nouvel identifiant de session).",
 
   // Memories
   memories_filter_project: "Projet",

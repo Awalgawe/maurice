@@ -144,6 +144,11 @@ export interface SessionMeta {
   // it is safe under the (size, mtime) cache key. Empty for the overwhelming
   // majority of sessions. Optional: absent pre-v23 cache.
   peerEvents?: PeerEvent[];
+  // Ordered, deduped API requestIds of this transcript's main thread (no
+  // sidechains). Derivable from this file alone, so it is cache-safe; it is the
+  // key the cross-file continuation join is built on (see SessionContinuity).
+  // Optional: absent pre-v24 cache. Empty for a transcript with no API call.
+  requestIds?: string[];
 }
 
 /** One local day's slice of a session's decomposable per-turn quantities. */
@@ -333,11 +338,53 @@ export interface LocalSessionDetail {
   compactions: { t: string; trigger?: string }[]; // context compactions (system/compact_boundary)
 }
 
+/** One other transcript of the same conversation (see SessionContinuity). */
+export interface LineageRef {
+  sessionId: string;
+  projectId: string;
+  projectLabel: string;
+  /** The Claude-generated title, when the transcript has one. Deliberately not
+   *  falling back to the first prompt: within a lineage every copy shares it,
+   *  so it would label every row identically. */
+  title: string | null;
+  requestCount: number; // API requests recorded in that transcript
+  messageCount: number;
+  start: string | null;
+  end: string | null;
+}
+
+/**
+ * Cross-FILE continuation. A rewind or a resume can copy a conversation into a
+ * new transcript (new sessionId, regenerated uuids) and carry on there, leaving
+ * the original file truncated mid-conversation — the intra-file fork analysis
+ * (see ForkInfo) cannot see any of it.
+ *
+ * The copy preserves each turn's API `requestId`, which is unique per request:
+ * two transcripts sharing their first requestId are provably the same
+ * conversation, and one whose requestId sequence is a strict prefix of the
+ * other's is provably continued by it. Nothing weaker is used — a shared origin
+ * with incomparable sequences is reported as `diverged`, never as a
+ * continuation.
+ *
+ * Derived from the whole index on every request, never persisted (it depends on
+ * other sessions, so it cannot live under a (size, mtime) cache key).
+ */
+export interface SessionContinuity {
+  lineageId: string; // the shared first requestId
+  continuedIn: LineageRef[]; // strict supersets, nearest (shortest) first
+  continuedFrom: LineageRef[]; // strict prefixes, nearest (longest) first
+  duplicates: LineageRef[]; // identical request sequence — a plain copy
+  diverged: LineageRef[]; // same origin, incomparable sequences (a real branch)
+}
+
 /** The enriched detail, and the ONLY shape served to a client (API and MCP
  *  alike). The three peer fields are deliberately non-optional: an optional
  *  field is exactly how the API/MCP divergence this service removes would
  *  quietly reopen. */
 export interface SessionDetail extends LocalSessionDetail {
+  // Other transcripts of the same conversation, or null when this file is the
+  // only one. Non-optional for the same reason as the peer fields below.
+  continuity: SessionContinuity | null;
   peers: PeerRef[];
   peerEventViews: Record<string, PeerEventView>; // keyed by eventId, both directions
   peerUnresolved: UnresolvedPeerEvent[]; // this session's events only

@@ -129,6 +129,8 @@ export async function buildMetaAndDocs(file: SessionFile): Promise<{ meta: Sessi
   const entrypoints = new Set<string>();
   const mcpTools = new Set<string>();
   const seenUsage = new Set<string>(); // dedup token usage by requestId/msgId
+  const requestIds: string[] = []; // main-thread API requests, in order (see SessionMeta)
+  const seenRequestIds = new Set<string>();
 
   let messageCount = 0;
   let start: string | null = null;
@@ -343,6 +345,16 @@ export async function buildMetaAndDocs(file: SessionFile): Promise<{ meta: Sessi
 
     if (type === "assistant" && msg) {
       if (isRealModel(msg.model)) models.add(msg.model);
+      // Main thread only: a fork copy reproduces the conversation's own
+      // requests, and a sidechain re-run would break the prefix relation the
+      // continuation join depends on. Parallel tool-call siblings share one
+      // requestId, hence the dedup.
+      if (typeof obj.requestId === "string" && obj.requestId && obj.isSidechain !== true) {
+        if (!seenRequestIds.has(obj.requestId)) {
+          seenRequestIds.add(obj.requestId);
+          requestIds.push(obj.requestId);
+        }
+      }
       if (obj.isApiErrorMessage === true) {
         apiErrorMessageCount++;
         if (day) dayBucket(day).apiErrorMessageCount++;
@@ -596,6 +608,7 @@ export async function buildMetaAndDocs(file: SessionFile): Promise<{ meta: Sessi
       filesTouched,
       byDay,
       peerEvents: peer.events,
+      requestIds,
     },
     searchDocs,
   };

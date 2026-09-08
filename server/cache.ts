@@ -9,7 +9,7 @@ import type { SessionMeta } from "../src/types.ts";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 let CACHE_DIR = path.join(__dirname, "..", ".cache");
 let CACHE_FILE = path.join(CACHE_DIR, "index.json");
-const CACHE_VERSION = 23; // 23: cross-session peer events (peerEvents)
+const CACHE_VERSION = 24; // 24: main-thread requestIds (cross-file continuation join)
 
 /** Redirect the metadata cache to a scratch dir so tests never touch the real
  *  project-local .cache/ (a dev server may be reading/writing it concurrently). */

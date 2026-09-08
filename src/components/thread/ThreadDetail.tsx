@@ -6,6 +6,7 @@ import type {
   ForkInfo,
   MemoryEntry,
   PeerEventView,
+  SessionContinuity,
   SubagentRef,
   ThreadMessage,
   TokenTotals,
@@ -17,6 +18,7 @@ import { Minimap } from "../Minimap";
 import { ContextChart } from "../ContextChart";
 import { CostBreakdownChart } from "../CostBreakdownChart";
 import { SubagentsPanel } from "./SubagentsPanel";
+import { ContinuityBanner } from "./ContinuityBanner";
 import { Pager } from "../ui/Pager";
 import { Panel } from "../ui/Panel";
 import { Chip } from "../ui/Chip";
@@ -71,6 +73,9 @@ export interface ThreadDetailProps {
   // rendered is the count, the (possibly larger) true total.
   filesTouchedCount?: number;
   filesTouched?: string[];
+  // Other transcripts of the same conversation (cross-file rewind/resume).
+  // Absent/null → no banner, which is the case for every subagent thread.
+  continuity?: SessionContinuity | null;
   // Resolved cross-session views, keyed by eventId. Provided as a context, not
   // threaded through Message/Block: both would lose what makes them cheap.
   peerEventViews?: Record<string, PeerEventView>;
@@ -126,6 +131,7 @@ export function ThreadDetail(p: ThreadDetailProps) {
       )}
 
       <div ref={threadElRef} className="detail-thread">
+        {p.continuity && <ContinuityBanner continuity={p.continuity} />}
         {p.branch && p.onBranch && (
           <div className="fork-banner">
             <span>⑂ {t("detail_fork_banner")} — {p.branch}</span>

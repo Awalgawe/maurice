@@ -1,4 +1,5 @@
 import { readDetail, readPeerRuntime } from "./parsers/sessions.ts";
+import { computeContinuity } from "./continuity.ts";
 import { computePeerGraph } from "./peers.ts";
 import { DETAIL_PAGE, messageLink } from "../src/lib/messageLink.ts";
 import type {
@@ -32,11 +33,15 @@ export async function readSessionDetail(
   const local = await readDetail(meta, offset, limit, branch);
   if (!local) return null;
 
+  // Cross-file continuation: same lineage-of-transcripts question as the peer
+  // join — index-wide, so recomputed here rather than cached.
+  const continuity = computeContinuity(index, meta);
+
   const hasPeerEvents = (meta.peerEvents?.length ?? 0) > 0;
   if (!hasPeerEvents) {
     // Overwhelmingly the common case: no graph to compute, but the served shape
     // is still the enriched one — the fields are empty, never absent.
-    return { ...local, peers: [], peerEventViews: {}, peerUnresolved: [] };
+    return { ...local, continuity, peers: [], peerEventViews: {}, peerUnresolved: [] };
   }
 
   const graph = computePeerGraph(index, registry);
@@ -79,7 +84,7 @@ export async function readSessionDetail(
     };
   }
 
-  return { ...local, peers: own?.peers ?? [], peerEventViews, peerUnresolved };
+  return { ...local, continuity, peers: own?.peers ?? [], peerEventViews, peerUnresolved };
 }
 
 export type { PeerGraph };

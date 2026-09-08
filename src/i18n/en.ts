@@ -163,6 +163,12 @@ export const en: Record<I18nKey, string> = {
   detail_fork_banner: "You are viewing an abandoned branch (rewind)",
   detail_fork_back: "→ Back to the live thread",
   detail_fork_diverges: "⑂ The thread splits here:",
+  continuity_in: "Partial transcript — the conversation continues in:",
+  continuity_from: "Continues from:",
+  continuity_duplicate: "Identical copy:",
+  continuity_diverged: "Diverged branch:",
+  continuity_evidence:
+    "Same conversation: these transcripts share their API request sequence (a rewind or a resume under a new session id).",
 
   memories_filter_project: "Project",
   memories_filter_type: "Type",
