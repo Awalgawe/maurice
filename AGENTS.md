@@ -15,6 +15,9 @@ Architecture:
   - `server/routes/api.ts` — all API routes; unknown `/api` routes must 404 as JSON, never fall through to the SPA fallback.
   - `server/mcp.ts` + `server/routes/mcp.ts` — MCP server (streamable HTTP at `/mcp`) exposing the read-only data as tools. `createMcpServer()` reuses the same parsers/cache as the API — no parsing logic is duplicated. Stateless transport, loopback-only with DNS-rebinding protection; mounted before the SPA fallback.
   - `server/facets.ts` — `computeFacets(index)`, shared by the `/api/filters` route and the MCP `filters` tool.
+  - `server/parsers/peers.ts` — cross-session (peer) messages, read from one transcript: envelope detection/decoding for received turns, and a `SendMessage` collector correlating each send to its `tool_result` by tool_use id. Purely local and syntactic — it never reads the live session registry.
+  - `server/peers.ts` — `computePeerGraph(index, registry)`: joins the per-session events into cross-session edges (by `msg_id`, with a body-hash fallback for legacy envelopes). Pure, derived from the index on every request, never persisted. Any ambiguity becomes an `unresolved` entry rather than a guessed edge.
+  - `server/sessionDetail.ts` — `readSessionDetail(...)`, the single assembly point for a session detail (local thread + peer resolution). `routes/api.ts` and the MCP `get_session` tool both go through it, so the two can never serve different shapes.
 - `src/` — React 18 + Vite SPA (dev port `5173`, proxies `/api` to `5174`).
   - `src/pages/` — one file per route (Dashboard, Sessions, SessionDetail, Workflow, Timeline, Memories, Plans, Hooks, Mcp, Bilans).
   - `src/components/` — `layout/` (topbar, selectors), `message/` (thread rendering, per-tool renderers in `message/tools/`), `ui/` (generic primitives).
@@ -39,6 +42,8 @@ Environment variables: `CLAUDE_DIR` (default `~/.claude`), `PORT` (default `5174
 - **Never write to `~/.claude`** (or `CLAUDE_DIR`). The whole app is read-only on its source data. The only sanctioned write exceptions are the explicit user-driven file operations: the memory-deletion endpoint (`DELETE /api/memories`) and the plan management endpoints (`DELETE`/`PATCH /api/plans`, which delete or rename plan files in `~/.claude/plans/` and `<repo>/.claude/plans/`). All such endpoints are loopback-only and confine every path to its own directory by basename. Caches go in the project-local `.cache/`.
 - **Cost is an estimate**, derived from `server/pricing.ts`. Don't present it as exact billing.
 - Token/cost attribution in the skill pivot is **per message** (`attributionSkill`) to avoid double-counting across skills — preserve this invariant when touching aggregation code.
+- The disk cache (`.cache/index.json`) holds **only** what one transcript derives on its own. Anything depending on the live session registry (`~/.claude/sessions/`) or on other sessions — the whole peer join — is recomputed per request, like `computeFacets`. Never persist raw tool-result text: an unrecognized result may echo its own input back.
+- A **false cross-session link is worse than an unresolved exchange**: every ambiguity in `computePeerGraph` must end as `unresolved`, never as a guessed edge.
 
 ## Code style
 

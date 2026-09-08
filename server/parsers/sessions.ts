@@ -20,6 +20,13 @@ import {
   tokensFromUsage,
 } from "./jsonl.ts";
 import { createForkCollector } from "./forks.ts";
+import {
+  assignPeerPositions,
+  createPeerCollector,
+  isPeerInbound,
+  parsePeerInbound,
+  type PeerRuntimeEvent,
+} from "./peers.ts";
 import { createCacheRewriteDetector } from "./cacheRewrite.ts";
 import type {
   CacheRewrite,
@@ -28,7 +35,9 @@ import type {
   DayAgg,
   ForkInfo,
   MessageKind,
-  SessionDetail,
+  PeerEvent,
+  PeerInbound,
+  LocalSessionDetail,
   SessionError,
   SessionMeta,
   SubagentDetail,
@@ -204,9 +213,13 @@ export async function buildMetaAndDocs(file: SessionFile): Promise<{ meta: Sessi
   const filesTouchedSet = new Set<string>();
   const filesTouched: string[] = [];
   const FILES_TOUCHED_CAP = 50;
+  const peerCollector = createPeerCollector(file.id);
 
+  let lineOrdinal = -1;
   for await (const obj of iterateJsonl(file.filePath)) {
+    lineOrdinal++;
     forkCollector.add(obj);
+    peerCollector.add(obj, lineOrdinal);
     const ts: string | undefined = obj.timestamp;
     if (ts) {
       if (!start || ts < start) start = ts;
@@ -430,7 +443,12 @@ export async function buildMetaAndDocs(file: SessionFile): Promise<{ meta: Sessi
       }
     }
 
-    if (firstUserPrompt === null && type === "user" && msg) {
+    // A turn received from a peer session is not a human prompt, and its
+    // protocol envelope must never reach firstUserPrompt or the search index —
+    // even when the envelope could only be read partially.
+    const peerIn = type === "user" && isPeerInbound(obj) ? parsePeerInbound(obj) : null;
+
+    if (firstUserPrompt === null && type === "user" && msg && !peerIn) {
       const text =
         typeof msg.content === "string"
           ? msg.content
@@ -450,7 +468,10 @@ export async function buildMetaAndDocs(file: SessionFile): Promise<{ meta: Sessi
       renderSeq.push(typeof obj.uuid === "string" ? obj.uuid : null);
       const c = msg.content;
       const parts: string[] = [];
-      if (type === "user" && typeof c === "string") {
+      if (peerIn) {
+        // Index the decoded body only; a partial read indexes only what was read.
+        if (peerIn.body && peerIn.body.trim()) parts.push(peerIn.body);
+      } else if (type === "user" && typeof c === "string") {
         if (c.trim()) parts.push(c);
       } else if (Array.isArray(c)) {
         for (const block of c) {
@@ -490,6 +511,9 @@ export async function buildMetaAndDocs(file: SessionFile): Promise<{ meta: Sessi
       }
     }
   }
+  const peer = peerCollector.finish();
+  assignPeerPositions(peer.events, analysis.forkOf, activeIdx, forkIdx);
+
   const searchDocs: SearchDocInput[] = [];
   for (const d of textDocs) {
     if (!d.uuid) continue;
@@ -571,6 +595,7 @@ export async function buildMetaAndDocs(file: SessionFile): Promise<{ meta: Sessi
       filesTouchedCount: filesTouchedSet.size,
       filesTouched,
       byDay,
+      peerEvents: peer.events,
     },
     searchDocs,
   };
@@ -920,6 +945,9 @@ export function classifyMessage(
   blocks: ContentBlock[],
   toolNames: Map<string, string>,
 ): MessageKind {
+  // Before isMeta/human: the harness flags a received turn isMeta, and its
+  // envelope otherwise reads as an ordinary human prompt.
+  if (isPeerInbound(obj)) return "peer_in";
   if (obj.isMeta === true) return "meta";
   if (obj.type === "assistant") return "assistant";
   const toolResults = blocks.filter((b) => b.kind === "tool_result");
@@ -955,11 +983,27 @@ function toThreadMessage(
   const msg = obj.message;
   const blocks = extractBlocks(msg);
   const isError = hasRealError(obj);
+  const kind = classifyMessage(obj, blocks, toolNames);
+  // A received turn renders as its decoded body; the protocol envelope stays
+  // available on `peerIn` for a collapsible block. `eventId` is filled by the
+  // annotation pass of getParsedSession — "" means "no resolved view for it"
+  // (a subagent transcript, which is out of scope for the peer graph).
+  let peerIn: (PeerInbound & { eventId: string }) | undefined;
+  if (kind === "peer_in") {
+    peerIn = { ...parsePeerInbound(obj), eventId: "" };
+    const body = peerIn.body;
+    for (const b of blocks) {
+      if (b.kind === "text") {
+        (b as { text: string }).text = body ?? "";
+        break;
+      }
+    }
+  }
   return {
     uuid: obj.uuid ?? null,
     type: obj.type,
     role: msg?.role ?? null,
-    kind: classifyMessage(obj, blocks, toolNames),
+    kind,
     timestamp: obj.timestamp ?? null,
     model: msg?.model ?? null,
     skill: obj.attributionSkill ?? null,
@@ -970,6 +1014,7 @@ function toThreadMessage(
     blocks,
     fork: null, // annotated after the fork analysis (subagent threads never fork)
     forksHere: [],
+    ...(peerIn ? { peerIn } : {}),
   };
 }
 
@@ -985,6 +1030,9 @@ interface ParsedSession {
   context: ContextPoint[];
   subagents: SubagentRef[];
   compactions: { t: string; trigger?: string }[]; // system/compact_boundary lines
+  // Transient peer companions (result excerpts, bodies) keyed by eventId. Lives
+  // and dies with the process — deliberately NEVER written to .cache/.
+  peerRuntime: Map<string, PeerRuntimeEvent>;
   size: number;
   mtimeMs: number;
   subagentsFp: string; // fingerprint of the subagents dir (see subagentsFingerprint)
@@ -1054,11 +1102,15 @@ async function getParsedSession(meta: SessionMeta): Promise<ParsedSession> {
   const forkCollector = createForkCollector();
   const rewriteDetector = createCacheRewriteDetector();
   const compactions: { t: string; trigger?: string }[] = [];
+  const peerCollector = createPeerCollector(meta.id);
+  const messageLines: number[] = []; // line ordinal of each pushed message
   let lines = 0;
 
   for await (const obj of iterateJsonl(filePath)) {
+    const lineOrdinal = lines;
     lines++;
     forkCollector.add(obj);
+    peerCollector.add(obj, lineOrdinal);
     if (obj.type === "system" && obj.subtype === "compact_boundary") {
       compactions.push({ t: obj.timestamp ?? "", trigger: obj.compactMetadata?.trigger });
     }
@@ -1096,6 +1148,7 @@ async function getParsedSession(meta: SessionMeta): Promise<ParsedSession> {
     }
     if (!RENDERABLE.has(obj.type)) continue;
     messages.push(toThreadMessage(obj, toolNames, rewrite, turnTokens));
+    messageLines.push(lineOrdinal);
   }
 
   const analysis = forkCollector.finish();
@@ -1106,6 +1159,26 @@ async function getParsedSession(meta: SessionMeta): Promise<ParsedSession> {
     m.forksHere = analysis.forksAt(m.uuid);
   }
 
+  // Annotation pass: give every peer anchor the eventId of the resolved view.
+  // A SendMessage block is keyed by (lineOrdinal, blockOrdinal) — the same pair
+  // the collector used — so two id-less blocks on one line stay distinct.
+  const peer = peerCollector.finish();
+  for (let i = 0; i < messages.length; i++) {
+    const m = messages[i];
+    if (m.peerIn && m.uuid) {
+      const found = peer.inboundByUuid.get(m.uuid);
+      if (found) m.peerIn.eventId = found.eventId;
+    }
+    let blockOrdinal = -1;
+    for (const b of m.blocks) {
+      if (b.kind !== "tool_use") continue;
+      blockOrdinal++;
+      if (b.name !== "SendMessage") continue;
+      const eventId = peer.outboundByLineBlock.get(`${messageLines[i]}:${blockOrdinal}`);
+      if (eventId) b.peerEventId = eventId;
+    }
+  }
+
   const parsed: ParsedSession = {
     messages,
     forks: analysis.forks,
@@ -1113,6 +1186,7 @@ async function getParsedSession(meta: SessionMeta): Promise<ParsedSession> {
     context,
     subagents: await listSubagents(meta.projectId, meta.id),
     compactions,
+    peerRuntime: peer.runtime,
     size,
     mtimeMs,
     subagentsFp,
@@ -1121,6 +1195,20 @@ async function getParsedSession(meta: SessionMeta): Promise<ParsedSession> {
   evictToByteBudget(parsedCache, PARSED_CACHE_MAX_BYTES);
   if (PERF) console.log(`[perf] getParsedSession ${meta.id} parsed ${lines} lines → ${messages.length} msgs in ${Date.now() - t0}ms`);
   return parsed;
+}
+
+/**
+ * Transient peer companions of a session, keyed by eventId — result excerpts
+ * and decoded bodies that are deliberately never persisted (an unrecognized
+ * result may echo its own input back).
+ *
+ * Goes through the SAME `getParsedSession`, hence the same in-memory cache: no
+ * second parse of the file, and the excerpt stays available even when the
+ * tool_result falls outside the page being served.
+ */
+export async function readPeerRuntime(meta: SessionMeta): Promise<Map<string, PeerRuntimeEvent>> {
+  const parsed = await getParsedSession(meta);
+  return parsed.peerRuntime;
 }
 
 /**
@@ -1136,7 +1224,7 @@ export async function readDetail(
   offset: number,
   limit: number,
   branch?: string | null,
-): Promise<SessionDetail | null> {
+): Promise<LocalSessionDetail | null> {
   const parsed = await getParsedSession(meta);
   let view: ThreadMessage[];
   if (!branch) {

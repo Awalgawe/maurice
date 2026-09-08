@@ -35,7 +35,7 @@ export function Block({ b, compact }: { b: ContentBlock; compact: boolean }) {
       return (
         <div className="block tool_use">
           <span className={"tname" + (b.isMcp ? " mcp" : "")}>{tname}</span>
-          {ToolBody && inp ? <ToolBody input={inp} /> : <ToolInput input={b.input} />}
+          {ToolBody && inp ? <ToolBody input={inp} peerEventId={b.peerEventId} /> : <ToolInput input={b.input} />}
           {copy && <CopyButton className="copy-float" label={copy.label} text={copy.text} />}
         </div>
       );

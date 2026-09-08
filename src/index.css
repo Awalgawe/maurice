@@ -21,6 +21,8 @@
   /* Conversation forks (rewind branches) — distinct from red (errors),
      accent (human) and accent-2 (subagents) in every theme. */
   --fork: #e879f9;
+  /* Cross-session (peer) messages: distinct from --accent (human) and --fork. */
+  --peer: #2dd4bf;
   /* Sub-agents' share of cost in the cost-breakdown donut — distinct from every
      other slice color (accent, accent-2, green, amber, red) in every theme. */
   --subagent-cost: #22d3ee;
@@ -96,6 +98,7 @@
   --red: #b85c5c;
   --amber: #c98232;
   --fork: #a94fb0;
+  --peer: #2f8f86;
   --subagent-cost: #3f8f8a;
   --chart-model-change: #9147c9;
   --model-opus: #7c5cd0;
@@ -143,6 +146,7 @@
   --red: #dd8585;
   --amber: #dea168;
   --fork: #d693e0;
+  --peer: #6fd0c5;
   --subagent-cost: #6bc4c9;
   --chart-model-change: #c4a0f5;
   --model-opus: #b39ddb;
@@ -417,6 +421,24 @@ tr.day-row td { background: var(--panel); color: var(--muted); font-size: 12px; 
 .tl-bar.active { background-image: repeating-linear-gradient(45deg, transparent, transparent 3px, rgba(255, 255, 255, .35) 3px, rgba(255, 255, 255, .35) 6px); }
 .tl-legend { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
 .tl-legend .leg { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--muted); }
+/* Expanded lane: one row per session, so an exchange can point at the session
+   it actually concerns instead of at a whole lane. */
+.tl-lane-toggle { padding: 0 4px; margin-right: 4px; background: transparent; border: 1px solid transparent; border-radius: var(--radius-xs); color: var(--peer); font-size: 12px; cursor: pointer; }
+.tl-lane-toggle:hover, .tl-lane-toggle.open { border-color: var(--peer); }
+.tl-sessions { grid-column: 1 / -1; display: grid; grid-template-columns: 200px 1fr; border-top: 1px dashed var(--border); background: var(--panel); }
+.tl-session-names { border-right: 1px solid var(--border); }
+.tl-session-row { display: flex; align-items: center; padding: 0 10px 0 22px; overflow: hidden; }
+.tl-session-name { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-decoration: none; }
+.tl-session-name:hover { color: var(--accent); }
+.tl-session-track { position: relative; }
+.tl-session-bar { position: absolute; height: 4px; min-width: 3px; border-radius: 2px; opacity: .5; }
+.tl-connectors { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+.tl-conn { stroke: var(--peer); stroke-width: 1.5; opacity: .8; }
+.tl-peer-mark { position: absolute; transform: translate(-50%, -50%); font-size: 11px; line-height: 1; color: var(--peer); text-decoration: none; padding: 1px 3px; border-radius: var(--radius-xs); background: var(--bg); }
+.tl-peer-mark:hover { outline: 1px solid var(--peer); z-index: 2; }
+/* A half connector reaches a lane sorted independently: dashed, so it never
+   reads as a line that simply wasn't drawn. */
+.tl-peer-mark.half { border: 1px dashed var(--peer); }
 
 /* Layout for detail — 3-row grid keeps pager+messages as one logical unit */
 .detail {
@@ -447,6 +469,7 @@ tr.day-row td { background: var(--panel); color: var(--muted); font-size: 12px; 
 /* Landmarks: user turns and subagent boundaries read full strength. */
 .mm-strip.kind-human    { background: var(--accent);   opacity: .95; }
 .mm-strip.kind-subagent { background: var(--accent-2); opacity: .9; }
+.mm-strip.kind-peer_in  { background: var(--peer); opacity: .95; }
 /* Abandoned-branch turns (fork view) tint --fork; the divergence point gets a
    dash identical to the error one, in the fork color. Red wins over fork. */
 .mm-strip.on-fork  { background: var(--fork); opacity: .55; }
@@ -475,6 +498,37 @@ tr.day-row td { background: var(--panel); color: var(--muted); font-size: 12px; 
 .msg.fork { opacity: .7; border-style: dashed; }
 .msg.fork .head { border-left-style: dashed; }
 .msg.haserror .head { background: var(--msg-err-bg); }
+/* A turn received from another session: never a human prompt, so it must not
+   read like one. The arrow, the rail and the peer chips share --peer. */
+.msg.kind-peer_in .head { border-left: 3px solid var(--peer); }
+/* Intervals carry meaning here: the dot binds tight to the name it qualifies,
+   the link sits further out as a separate affordance. */
+.peer-meta { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+.peer-meta .peer-name + .peer-dot { margin-left: -3px; }
+.peer-meta .peer-dot + .peer-link, .peer-meta .peer-outcome + .peer-link { margin-left: 6px; }
+.peer-meta .peer-arrow { color: var(--peer); font-weight: 700; }
+.peer-meta .peer-name { color: var(--text); font-weight: 600; }
+.peer-link { color: var(--peer); text-decoration: none; border-bottom: 1px dotted var(--peer); }
+.peer-link:hover { border-bottom-style: solid; }
+.peer-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); display: inline-block; }
+.peer-dot.live-idle { background: var(--green); }
+.peer-dot.live-busy { background: var(--accent); }
+.peer-dot.live-waiting { background: var(--amber); }
+.peer-dot.live-unknown { background: var(--muted); }
+.peer-envelope { margin-top: 8px; }
+.peer-envelope > summary { cursor: pointer; font-size: 12px; color: var(--muted); }
+.peer-envelope pre { margin: 6px 0 0; padding: 8px; background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--radius-xs); font-family: var(--mono); font-size: 11px; white-space: pre-wrap; overflow-x: auto; }
+.peer-send { display: flex; flex-direction: column; gap: 6px; }
+.peer-summary { font-size: 13px; color: var(--text); }
+.peer-outcome { font-size: 11px; padding: 1px 7px; border-radius: var(--radius-xs); border: 1px solid var(--border); color: var(--muted); }
+.peer-outcome.outcome-sent { color: var(--green); border-color: var(--green); }
+.peer-outcome.outcome-denied { color: var(--amber); border-color: var(--amber); }
+.peer-outcome.outcome-needs_ref,
+.peer-outcome.outcome-unreachable,
+.peer-outcome.outcome-not_resumable,
+.peer-outcome.outcome-invalid_input,
+.peer-outcome.outcome-failed_unknown,
+.peer-outcome.outcome-no_result { color: var(--red); border-color: var(--red); }
 /* Search deep-link target: brief highlight so the eye lands on the hit. */
 .msg.flash { animation: msg-flash 2s ease-out; }
 @keyframes msg-flash { 0%, 40% { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); } 100% { box-shadow: none; } }

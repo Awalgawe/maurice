@@ -5,11 +5,17 @@ import {
   TaskCreateInput, TaskUpdateInput, ScheduleWakeupInput, PushNotificationInput,
   toolInputJson,
 } from "./miscTools";
+import { SendMessageInput } from "../PeerMeta";
 import type { I18nKey } from "../../../hooks/useT";
 
 export { ToolInput } from "./miscTools";
 
-type ToolInputComponent = (props: { input: Record<string, unknown> }) => React.ReactNode;
+/** `peerEventId` is set only on SendMessage blocks; every other renderer simply
+ *  ignores the optional prop. */
+type ToolInputComponent = (props: {
+  input: Record<string, unknown>;
+  peerEventId?: string;
+}) => React.ReactNode;
 
 /** Tool name → dedicated input renderer. Module-level const (built once). */
 export const TOOL_INPUTS: Record<string, ToolInputComponent> = {
@@ -31,6 +37,7 @@ export const TOOL_INPUTS: Record<string, ToolInputComponent> = {
   TaskUpdate: TaskUpdateInput,
   ScheduleWakeup: ScheduleWakeupInput,
   PushNotification: PushNotificationInput,
+  SendMessage: SendMessageInput,
 };
 
 /**

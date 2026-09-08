@@ -7,6 +7,7 @@ import type {
   HookEntry,
   McpInfo,
   MemoryEntry,
+  PeerGraph,
   PlanEntry,
   SearchHit,
   SessionDetail,
@@ -26,6 +27,7 @@ async function get<T>(url: string): Promise<T> {
 export const getSessions = () => get<SessionMeta[]>("/api/sessions");
 export const getActive = () => get<ActiveSession | { active: false }>("/api/active");
 export const getFilters = () => get<Facets>("/api/filters");
+export const getPeers = () => get<PeerGraph>("/api/peers");
 export const getDetail = (id: string, offset = 0, limit = 200, branch: string | null = null) =>
   get<SessionDetail>(
     `/api/sessions/${id}?offset=${offset}&limit=${limit}${branch ? `&branch=${encodeURIComponent(branch)}` : ""}`,

@@ -4,20 +4,23 @@ import fs from "node:fs";
 import { execFile } from "node:child_process";
 import path from "node:path";
 import { getIndex } from "../cache.ts";
-import { readDetail, readSubagentDetail } from "../parsers/sessions.ts";
+import { readSubagentDetail } from "../parsers/sessions.ts";
+import { readSessionDetail } from "../sessionDetail.ts";
+import { computePeerGraph } from "../peers.ts";
+import { listDefinedAgents } from "../parsers/agents.ts";
 import { listMemories } from "../parsers/memory.ts";
 import { listPlans, resolvePlanPath, resolveProjectPath } from "../parsers/plans.ts";
 import { listHooks } from "../parsers/hooks.ts";
 import { buildAgentRows } from "../parsers/agents.ts";
 import { getActiveSession } from "../parsers/active.ts";
 import { listBilans, readBilan } from "../parsers/bilans.ts";
-import { sessionFilePath, subagentsDir, PROJECTS_DIR } from "../claudeDir.ts";
+import { sessionFilePath, subagentsDir, PROJECTS_DIR, readPeerRegistry } from "../claudeDir.ts";
 import { searchDocs } from "../parsers/searchIndex.ts";
 import { computeFacets } from "../facets.ts";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { createMcpServer } from "../mcp.ts";
-import type { Facets, McpInfo, McpToolDoc, McpToolParam, SearchHit, SessionMeta } from "../../src/types.ts";
+import type { Facets, McpInfo, McpToolDoc, McpToolParam, PeerRegistrySnapshot, SearchHit, SessionMeta } from "../../src/types.ts";
 
 export const api = Router();
 
@@ -201,6 +204,15 @@ api.get("/filters", async (_req, res) => {
   res.json(facets);
 });
 
+/** Live peer registry plus the agent types this machine defines — both disk
+ *  state outside any transcript's cache key, so they are read per request and
+ *  handed to the (pure) graph computation, never read from inside it. */
+async function peerRegistry(index: SessionMeta[]): Promise<PeerRegistrySnapshot> {
+  const snap = readPeerRegistry();
+  snap.knownAgentTypes = listDefinedAgents(index).map((a) => a.name);
+  return snap;
+}
+
 async function findMeta(id: string): Promise<SessionMeta | undefined> {
   const index = await getIndex();
   return index.find((s) => s.id === id);
@@ -212,9 +224,15 @@ api.get("/sessions/:id", async (req, res) => {
   const offset = Math.max(0, Number(req.query.offset) || 0);
   const limit = Math.min(500, Math.max(1, Number(req.query.limit) || 100));
   const branch = typeof req.query.branch === "string" && req.query.branch ? req.query.branch : null;
-  const detail = await readDetail(meta, offset, limit, branch);
+  const index = await getIndex();
+  const detail = await readSessionDetail(index, await peerRegistry(index), meta, offset, limit, branch);
   if (!detail) return res.status(404).json({ error: "branch not found" });
   res.json(detail);
+});
+
+api.get("/peers", async (_req, res) => {
+  const index = await getIndex();
+  res.json(computePeerGraph(index, await peerRegistry(index)));
 });
 
 api.get("/sessions/:id/subagents/:ref", async (req, res) => {

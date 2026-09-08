@@ -139,6 +139,11 @@ export interface SessionMeta {
   // byDay reproduces the session-level totals (tokens, costByComponent, counts,
   // per-key maps).
   byDay?: Record<string, DayAgg>;
+  // Cross-session message events of this transcript, both directions. Local and
+  // derivable from this file alone (never from the live session registry), so
+  // it is safe under the (size, mtime) cache key. Empty for the overwhelming
+  // majority of sessions. Optional: absent pre-v23 cache.
+  peerEvents?: PeerEvent[];
 }
 
 /** One local day's slice of a session's decomposable per-turn quantities. */
@@ -169,7 +174,7 @@ export interface DayAgg {
  * output too (the protocol delivers tool_result in a user turn), so `role`
  * alone mislabels subagent reports and injected context as "User".
  */
-export type MessageKind = "human" | "assistant" | "tool_result" | "subagent" | "meta";
+export type MessageKind = "human" | "assistant" | "tool_result" | "subagent" | "meta" | "peer_in";
 
 /** A single rendered message in the detail thread. */
 export interface ThreadMessage {
@@ -192,6 +197,9 @@ export interface ThreadMessage {
   fork: string | null;
   // Refs of the abandoned branches that diverge right after this turn.
   forksHere: string[];
+  // Set only on `peer_in` turns: the decoded cross-session envelope plus the
+  // local event id the resolved view is keyed by.
+  peerIn?: PeerInbound & { eventId: string };
 }
 
 /** One cache-rewrite occurrence located within a served view, so the aside
@@ -224,7 +232,16 @@ export interface InlineImage {
 export type ContentBlock =
   | { kind: "text"; text: string }
   | { kind: "thinking"; text: string }
-  | { kind: "tool_use"; name: string; isMcp: boolean; input: unknown; id: string | null }
+  | {
+      kind: "tool_use";
+      name: string;
+      isMcp: boolean;
+      input: unknown;
+      id: string | null;
+      // Only on SendMessage blocks: key into SessionDetail.peerEventViews, so
+      // the renderer can reach a tool_result it was never handed.
+      peerEventId?: string;
+    }
   | {
       kind: "tool_result";
       isError: boolean;
@@ -298,7 +315,9 @@ export interface SubagentDetail {
   subagents: SubagentRef[];
 }
 
-export interface SessionDetail {
+/** What `readDetail` builds from a single transcript — no cross-session join.
+ *  Parser-level tests stay on this shape. */
+export interface LocalSessionDetail {
   meta: SessionMeta;
   messages: ThreadMessage[];
   total: number; // total messages of the served view (for pagination)
@@ -312,6 +331,16 @@ export interface SessionDetail {
   cacheRewrites: CacheRewriteRef[];
   branch: string | null; // served view: null = live thread, "f1"… = a fork
   compactions: { t: string; trigger?: string }[]; // context compactions (system/compact_boundary)
+}
+
+/** The enriched detail, and the ONLY shape served to a client (API and MCP
+ *  alike). The three peer fields are deliberately non-optional: an optional
+ *  field is exactly how the API/MCP divergence this service removes would
+ *  quietly reopen. */
+export interface SessionDetail extends LocalSessionDetail {
+  peers: PeerRef[];
+  peerEventViews: Record<string, PeerEventView>; // keyed by eventId, both directions
+  peerUnresolved: UnresolvedPeerEvent[]; // this session's events only
 }
 
 export interface Facets {
@@ -460,4 +489,182 @@ export interface AgentRow {
   origin: AgentOrigin;
   definitions: AgentDefinition[]; // every registry entry matching this name (possibly >1 across projects)
   usage: AgentUsage | null;
+}
+
+// ---------------------------------------------------------------------------
+// Cross-session (peer) messages
+//
+// Two Claude Code sessions running side by side can talk to each other: one
+// calls `SendMessage`, the other receives the text as an ordinary `user` turn
+// wrapped in a `<cross-session-message>` envelope. Maurice models the two ends
+// as *local* events (derivable from a single transcript, so cacheable) that a
+// *global* pass joins into edges across sessions.
+// ---------------------------------------------------------------------------
+
+export type PeerDirection = "in" | "out";
+
+/** How confident the transcript alone is about what a `SendMessage` targeted.
+ *  Purely SYNTACTIC — never derived from the live session registry, which is
+ *  disk state outside the (size, mtime) cache invalidation. */
+export type PeerTargetHint = "peer" | "in_process" | "unknown";
+
+export type PeerOutcome =
+  | "sent"
+  | "needs_ref"
+  | "unreachable"
+  | "not_resumable"
+  | "invalid_input"
+  | "denied"
+  | "failed_unknown" // a tool_result IS present, its shape is unrecognized
+  | "no_result"; // no tool_result at all — strictly this case
+
+export interface PeerEventBase {
+  /** Stable local identity, see `eventId` derivation in peers.ts. */
+  eventId: string;
+  uuid: string | null; // nullable ⇒ not navigable
+  lineOrdinal: number; // rank of the JSONL line — always defined
+  index: number; // position within ITS view (activeIdx/forkIdx)
+  fork: string | null;
+  timestamp: string | null;
+  bodyHash: string | null; // null when the body is empty/blank ⇒ never a fallback candidate
+  bodyLength: number;
+}
+
+export interface PeerInboundEvent extends PeerEventBase {
+  direction: "in";
+  msgId: string | null; // origin.msg_id — null on the legacy envelope
+  rawFrom: string | null;
+  peerNameHint: string | null;
+  peerPid: number | null;
+  parseComplete: boolean; // false ⇒ envelope recognized but unreadable
+}
+
+export interface PeerOutboundEvent extends PeerEventBase {
+  direction: "out";
+  msgId: string | null; // from the tool_result, when it succeeded
+  toolUseId: string | null; // null when the block carries no id
+  blockOrdinal: number; // rank of the block within ITS line
+  rawTarget: string | null;
+  peerNameHint: string | null;
+  summary: string | null;
+  outcome: PeerOutcome;
+  targetHint: PeerTargetHint;
+  /** Extracted by KNOWN parsers only — never free text. The `X [ref]` a
+   *  needs_ref failure proposes. */
+  suggestedRef: string | null;
+}
+
+export type PeerEvent = PeerInboundEvent | PeerOutboundEvent;
+
+/** The parsed `<cross-session-message>` envelope of one received turn. */
+export interface PeerInbound {
+  body: string | null; // clean text, envelope stripped
+  rawEnvelope: string; // the turn's raw content, kept for a collapsible block
+  rawFrom: string | null; // e.g. "uds:/tmp/cc-socks/93692.sock"
+  peerNameHint: string | null; // `from-name` — a label, NEVER an identity
+  peerPid: number | null;
+  msgId: string | null;
+  fromMode: string | null;
+  /** false ⇒ the envelope was recognized but could not be fully read. The turn
+   *  still classifies as `peer_in`; it never falls back to `human`. */
+  parseComplete: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Peer resolution — derived from the whole index, NEVER persisted
+// ---------------------------------------------------------------------------
+
+/** Where one end of an exchange sits, precisely enough to deep-link to it. */
+export interface PeerMessageLocation {
+  sessionId: string;
+  projectId: string;
+  eventId: string;
+  uuid: string | null; // null ⇒ not navigable
+  toolUseId: string | null;
+  index: number;
+  branch: string | null;
+  timestamp: string | null;
+}
+
+/** One resolved exchange: exactly one send and one receive, in two sessions. */
+export interface PeerEdge {
+  key: string; // msgId ?? `${from.eventId}->${to.eventId}` — never timestamp-based
+  msgId: string | null;
+  from: PeerMessageLocation; // the sender
+  to: PeerMessageLocation; // the receiver
+  summary: string | null;
+  resolution: "msg_id" | "body_hash";
+}
+
+export type UnresolvedReason =
+  | "no_counterpart"
+  | "ambiguous"
+  | "peer_not_indexed"
+  | "send_failed"
+  | "target_unknown";
+
+export interface UnresolvedPeerEvent {
+  at: PeerMessageLocation;
+  direction: PeerDirection;
+  reason: UnresolvedReason;
+  peerNameHint: string | null;
+  outcome: PeerOutcome | null;
+}
+
+/**
+ * CLOSED union, the only live-state shape the UI ever sees: `t()` accepts an
+ * I18nKey alone, so a raw registry value could never be interpolated into a
+ * key. Observed in the registry: `idle`, `busy`, `waiting`, and absent.
+ */
+export type PeerLiveStatus = "idle" | "busy" | "waiting" | "unknown";
+
+/** A session this one exchanged messages with. */
+export interface PeerRef {
+  sessionId: string;
+  projectId: string;
+  label: string;
+  sent: number;
+  received: number;
+  firstTs: string | null;
+  lastTs: string | null;
+  liveStatus: PeerLiveStatus;
+}
+
+/** Snapshot of `~/.claude/sessions/*.json`. Read by the routes, never by the
+ *  computation, and never cached with a transcript. */
+export interface PeerRegistrySnapshot {
+  byPid: Record<
+    number,
+    { sessionId: string; name: string; cwd: string; socket: string; status: string | null }
+  >;
+  bySocket: Record<string, number>;
+  /** Several live sessions can share a name, so this is a LIST: two or more
+   *  candidates means no identity is retained at all. */
+  byName: Record<string, number[]>;
+  knownAgentTypes: string[];
+}
+
+export interface PeerGraph {
+  edges: PeerEdge[];
+  unresolved: UnresolvedPeerEvent[];
+  excludedInProcess: number;
+  bySession: Record<string, { peers: PeerRef[]; edgeKeys: string[]; unresolvedCount: number }>;
+}
+
+/** One resolved view of a local event — the SAME shape for both directions, so
+ *  the received card and the SendMessage block read one source by one key. */
+export interface PeerEventView {
+  eventId: string;
+  direction: PeerDirection;
+  edge: PeerEdge | null;
+  unresolved: UnresolvedPeerEvent | null;
+  /** Link to the event's COUNTERPART, never to its own anchor. null when
+   *  unresolved, or when the far location has no uuid. */
+  counterpartLink: string | null;
+  peerLabel: string | null; // resolved name, else the raw hint
+  liveStatus: PeerLiveStatus;
+  outcome: PeerOutcome | null; // out
+  summary: string | null; // out
+  resultExcerpt: string | null; // out — MEMORY only, never from the disk cache
+  parseComplete: boolean | null; // in
 }

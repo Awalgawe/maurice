@@ -7,8 +7,9 @@ import { useT } from "../hooks/useT";
 import { ThreadDetail } from "../components/thread/ThreadDetail";
 import { Chip } from "../components/ui/Chip";
 import { ErrorState } from "../components/ui/ErrorState";
+import { DETAIL_PAGE } from "../lib/messageLink";
 
-const PAGE = 200;
+const PAGE = DETAIL_PAGE;
 
 export default function SessionDetail() {
   const t = useT();
@@ -123,6 +124,17 @@ export default function SessionDetail() {
     }
   }
   const pages = Math.ceil(data.total / PAGE);
+  // Session-level peer summary. Counted over the resolved views (both
+  // directions, one key each), so it can never disagree with what the thread
+  // renders. Absent = no cross-session traffic at all, and no chip.
+  const peerViews = Object.values(data.peerEventViews ?? {});
+  const peerCounts = peerViews.length
+    ? {
+        peers: data.peers.length,
+        sent: peerViews.filter((v) => v.direction === "out").length,
+        received: peerViews.filter((v) => v.direction === "in").length,
+      }
+    : null;
 
   return (
     <ThreadDetail
@@ -135,9 +147,17 @@ export default function SessionDetail() {
           {m.ticket && <Chip variant="ticket">{m.ticket}</Chip>}
           {m.branches.map((b) => <Chip key={b}>{b}</Chip>)}
           {m.skills.map((s) => <Chip variant="skill" key={s}>{skillLabel(s)}</Chip>)}
+          {peerCounts && (
+            <Chip
+              title={`${t("peer_badge_title")} · ${peerCounts.peers} ${t("peer_badge_label")}`}
+            >
+              ⇄ {peerCounts.sent} {t("peer_badge_sent")} · {peerCounts.received} {t("peer_badge_received")}
+            </Chip>
+          )}
         </>
       }
       messages={data.messages}
+      peerEventViews={data.peerEventViews}
       context={data.context}
       modelChanges={modelChanges}
       compactions={data.compactions}

@@ -1,13 +1,23 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getIndex } from "./cache.ts";
-import { readDetail } from "./parsers/sessions.ts";
+import { readSessionDetail } from "./sessionDetail.ts";
+import { computePeerGraph } from "./peers.ts";
 import { listMemories } from "./parsers/memory.ts";
-import { buildAgentRows } from "./parsers/agents.ts";
+import { buildAgentRows, listDefinedAgents } from "./parsers/agents.ts";
+import { readPeerRegistry } from "./claudeDir.ts";
 import { listBilans, readBilan } from "./parsers/bilans.ts";
 import { searchDocs } from "./parsers/searchIndex.ts";
 import { computeFacets } from "./facets.ts";
-import type { SearchHit, SessionMeta, TokenTotals } from "../src/types.ts";
+import type { PeerRegistrySnapshot, SearchHit, SessionMeta, TokenTotals } from "../src/types.ts";
+
+/** Same per-request read as the HTTP API: the live peer registry and the agent
+ *  types defined on this machine are disk state outside any transcript cache. */
+function peerRegistry(index: SessionMeta[]): PeerRegistrySnapshot {
+  const snap = readPeerRegistry();
+  snap.knownAgentTypes = listDefinedAgents(index).map((a) => a.name);
+  return snap;
+}
 
 /** Wrap any JSON-serialisable value as an MCP text content result. */
 function json(data: unknown) {
@@ -158,9 +168,17 @@ export function createMcpServer(): McpServer {
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     async ({ id, offset, limit, branch }) => {
-      const meta = (await getIndex()).find((s) => s.id === id);
+      const index = await getIndex();
+      const meta = index.find((s) => s.id === id);
       if (!meta) return { isError: true, content: [{ type: "text" as const, text: `session not found: ${id}` }] };
-      const detail = await readDetail(meta, Math.max(0, offset ?? 0), Math.min(200, Math.max(1, limit ?? 50)), branch ?? null);
+      const detail = await readSessionDetail(
+        index,
+        peerRegistry(index),
+        meta,
+        Math.max(0, offset ?? 0),
+        Math.min(200, Math.max(1, limit ?? 50)),
+        branch ?? null,
+      );
       if (!detail) return { isError: true, content: [{ type: "text" as const, text: `branch not found: ${branch}` }] };
       return json(detail);
     },
@@ -345,6 +363,25 @@ export function createMcpServer(): McpServer {
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     async () => json(computeFacets(await getIndex())),
+  );
+
+  server.registerTool(
+    "peers",
+    {
+      title: "Cross-session messages",
+      description:
+        "Cross-session (peer) messages: exchanges between two Claude Code sessions running side by side. `edges` are " +
+        "resolved exchanges (one send matched to one receive, by msg_id or, for legacy envelopes, by body hash); " +
+        "`unresolved` lists every event that could NOT be matched, with the reason — an ambiguous match never becomes " +
+        "an edge. `excludedInProcess` counts SendMessage calls aimed at an in-process subagent, which are not peer " +
+        "exchanges at all. Derived from the index and the live session registry on each call, never cached.",
+      inputSchema: {},
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    async () => {
+      const index = await getIndex();
+      return json(computePeerGraph(index, peerRegistry(index)));
+    },
   );
 
   return server;

@@ -5,6 +5,7 @@ import { useT } from "../../hooks/useT";
 import { messageToText } from "../../lib/messageText";
 import { Chip } from "../ui/Chip";
 import { Block } from "./Block";
+import { PeerEnvelope, PeerInboundMeta } from "./PeerMeta";
 
 const IconCopy = () => (
   <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -59,6 +60,7 @@ export const Message = React.memo(function Message({ m, compact = false }: { m: 
           <IconChevron />
         </span>
         <span className="role">{t(`message_kind_${m.kind}`)}</span>
+        {m.peerIn && <PeerInboundMeta peerIn={m.peerIn} />}
         {m.model && <Chip>{m.model.replace(/^claude-/, "")}</Chip>}
         {m.skill && <Chip variant="skill">{skillLabel(m.skill)}</Chip>}
         {m.tokens && (
@@ -123,7 +125,8 @@ export const Message = React.memo(function Message({ m, compact = false }: { m: 
           {m.blocks.map((b, i) => (
             <Block key={i} b={b} compact={compact} />
           ))}
-          {m.blocks.length === 0 && <span className="muted">—</span>}
+          {m.blocks.length === 0 && !m.peerIn && <span className="muted">—</span>}
+          {m.peerIn && <PeerEnvelope raw={m.peerIn.rawEnvelope} />}
         </div>
       )}
     </div>
