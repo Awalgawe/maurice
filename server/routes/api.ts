@@ -26,9 +26,18 @@ export const api = Router();
 
 const PERF = !!process.env.PERF;
 
+/** The list response drops the two index-only fields. `requestIds` (the
+ *  continuation join) and `peerEvents` (the peer join) exist for the
+ *  cross-session joins the server computes itself; no client reads either, and
+ *  together they are ~30% of the payload. The in-memory index keeps them. */
+function listRow(s: SessionMeta): SessionMeta {
+  const { requestIds: _ids, peerEvents: _events, ...row } = s;
+  return row;
+}
+
 api.get("/sessions", async (_req, res) => {
   const index = await getIndex();
-  res.json(index);
+  res.json(index.map(listRow));
 });
 
 api.get("/active", async (_req, res) => {
