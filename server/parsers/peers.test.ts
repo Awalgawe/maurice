@@ -104,7 +104,6 @@ describe("isPeerInbound / parsePeerInbound", () => {
     const p = parsePeerInbound(obj);
     expect(p.body).toBe("hello peer");
     expect(p.msgId).toBe("m-1");
-    expect(p.peerPid).toBe(93692);
     expect(p.peerNameHint).toBe("boapp-5a");
     expect(p.parseComplete).toBe(true);
   });
@@ -127,7 +126,6 @@ describe("isPeerInbound / parsePeerInbound", () => {
     const p = parsePeerInbound(obj);
     expect(p.body).toBe(body);
     expect(p.msgId).toBeNull();
-    expect(p.peerPid).toBe(42);
     expect(p.parseComplete).toBe(true);
   });
 
@@ -200,36 +198,27 @@ describe("classifyTarget", () => {
 
 describe("classifyOutcome", () => {
   it("tells failed_unknown (a result IS present) from no_result (none at all)", () => {
-    expect(classifyOutcome(null, false, false).outcome).toBe("no_result");
-    expect(classifyOutcome("something the harness has never emitted", false, false).outcome).toBe("failed_unknown");
+    expect(classifyOutcome(null, false).outcome).toBe("no_result");
+    expect(classifyOutcome("something the harness has never emitted", false).outcome).toBe("failed_unknown");
   });
 
   it("classifies each observed shape", () => {
-    expect(classifyOutcome(ok("peer", "abc"), false, false)).toEqual({
-      outcome: "sent",
-      msgId: "abc",
-      suggestedRef: null,
-    });
-    expect(classifyOutcome(needsRef("custom-mcp-09", "0381d0"), false, false)).toEqual({
-      outcome: "needs_ref",
-      msgId: null,
-      suggestedRef: "custom-mcp-09 [0381d0]",
-    });
+    expect(classifyOutcome(ok("peer", "abc"), false)).toEqual({ outcome: "sent", msgId: "abc" });
+    expect(classifyOutcome(needsRef("custom-mcp-09", "0381d0"), false)).toEqual({ outcome: "needs_ref", msgId: null });
     expect(
-      classifyOutcome(JSON.stringify({ success: false, message: "No agent named 'general-purpose' is reachable." }), false, false)
+      classifyOutcome(JSON.stringify({ success: false, message: "No agent named 'general-purpose' is reachable." }), false)
         .outcome,
     ).toBe("unreachable");
     expect(
       classifyOutcome(
         JSON.stringify({ success: false, message: 'Agent "a41d" could not be resumed: No transcript found' }),
         false,
-        false,
       ).outcome,
     ).toBe("not_resumable");
-    expect(
-      classifyOutcome("<tool_use_error>InputValidationError: SendMessage failed…", true, false).outcome,
-    ).toBe("invalid_input");
-    expect(classifyOutcome("The user doesn't want to proceed with this tool use", true, true).outcome).toBe("denied");
+    expect(classifyOutcome("<tool_use_error>InputValidationError: SendMessage failed…", false).outcome).toBe(
+      "invalid_input",
+    );
+    expect(classifyOutcome("The user doesn't want to proceed with this tool use", true).outcome).toBe("denied");
   });
 });
 
@@ -341,7 +330,6 @@ describe("createPeerCollector", () => {
     const [ev] = outs(r);
     expect(ev.targetHint).toBe("peer");
     expect(ev.outcome).toBe("needs_ref");
-    expect(ev.suggestedRef).toBe("custom-mcp-09 [0381d0]");
     expect(ev.peerNameHint).toBe("custom-mcp-09");
   });
 

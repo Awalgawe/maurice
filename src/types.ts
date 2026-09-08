@@ -576,7 +576,6 @@ export interface PeerEventBase {
   fork: string | null;
   timestamp: string | null;
   bodyHash: string | null; // null when the body is empty/blank ⇒ never a fallback candidate
-  bodyLength: number;
 }
 
 export interface PeerInboundEvent extends PeerEventBase {
@@ -584,7 +583,6 @@ export interface PeerInboundEvent extends PeerEventBase {
   msgId: string | null; // origin.msg_id — null on the legacy envelope
   rawFrom: string | null;
   peerNameHint: string | null;
-  peerPid: number | null;
   parseComplete: boolean; // false ⇒ envelope recognized but unreadable
 }
 
@@ -598,9 +596,6 @@ export interface PeerOutboundEvent extends PeerEventBase {
   summary: string | null;
   outcome: PeerOutcome;
   targetHint: PeerTargetHint;
-  /** Extracted by KNOWN parsers only — never free text. The `X [ref]` a
-   *  needs_ref failure proposes. */
-  suggestedRef: string | null;
 }
 
 export type PeerEvent = PeerInboundEvent | PeerOutboundEvent;
@@ -611,9 +606,7 @@ export interface PeerInbound {
   rawEnvelope: string; // the turn's raw content, kept for a collapsible block
   rawFrom: string | null; // e.g. "uds:/tmp/cc-socks/93692.sock"
   peerNameHint: string | null; // `from-name` — a label, NEVER an identity
-  peerPid: number | null;
   msgId: string | null;
-  fromMode: string | null;
   /** false ⇒ the envelope was recognized but could not be fully read. The turn
    *  still classifies as `peer_in`; it never falls back to `human`. */
   parseComplete: boolean;
@@ -697,7 +690,7 @@ export interface PeerGraph {
   edges: PeerEdge[];
   unresolved: UnresolvedPeerEvent[];
   excludedInProcess: number;
-  bySession: Record<string, { peers: PeerRef[]; edgeKeys: string[]; unresolvedCount: number }>;
+  bySession: Record<string, { peers: PeerRef[]; unresolvedCount: number }>;
 }
 
 /** One resolved view of a local event — the SAME shape for both directions, so

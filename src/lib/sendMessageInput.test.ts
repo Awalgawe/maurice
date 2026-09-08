@@ -20,6 +20,12 @@ describe("readSendMessage", () => {
     expect(readSendMessage({ to: "a", prompt: "from prompt" })).toMatchObject({ body: "from prompt", bodyKey: "prompt" });
   });
 
+  it("treats the truncated content echo the harness logs as the same body", () => {
+    const f = readSendMessage({ to: "a", message: "REVIEW · round=1 · ref=plan.md and the rest", content: "REVIEW · round=1 · ref=plan…" });
+    expect(f.body).toBe("REVIEW · round=1 · ref=plan.md and the rest");
+    expect(f.rest).toEqual({});
+  });
+
   it("keeps a content that differs from message rather than hiding it", () => {
     const f = readSendMessage({ to: "a", message: "short", content: "the long one" });
     expect(f.body).toBe("short");

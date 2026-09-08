@@ -47,7 +47,7 @@ interface EdgeMark {
  * Returns null when neither end can be placed (no timestamp, or outside the
  * visible window).
  */
-function renderEdge(
+function placeEdge(
   e: PeerEdge,
   laneSessionIds: Set<string>,
   rowY: Map<string, number>,
@@ -249,6 +249,11 @@ export default function Timeline() {
                 .filter((s) => involved.has(s.id))
                 .sort((a, b) => new Date(a.start as string).getTime() - new Date(b.start as string).getTime());
               const rowY = new Map(rows.map((s, i) => [s.id, i * SESSION_ROW_H + SESSION_ROW_H / 2]));
+              // Placed once: the connectors and their endpoint markers are two
+              // passes over the same geometry, and a collapsed lane draws none.
+              const placed = isOpen
+                ? laneEdges.map((e) => ({ e, ends: placeEdge(e, laneSessionIds, rowY, pctAt) }))
+                : [];
               return (
               <div key={lane.key} className="tl-row tl-lane">
                 <div className="tl-lane-head">
@@ -346,9 +351,8 @@ export default function Timeline() {
                       );
                     })}
                     <svg className="tl-connectors" aria-hidden="true">
-                      {laneEdges.map((e) => {
-                        const ends = renderEdge(e, laneSessionIds, rowY, pctAt);
-                        return ends && ends.kind === "full" ? (
+                      {placed.map(({ e, ends }) =>
+                        ends && ends.kind === "full" ? (
                           <line
                             key={e.key}
                             className="tl-conn"
@@ -357,11 +361,10 @@ export default function Timeline() {
                             x2={`${ends.x2}%`}
                             y2={ends.y2}
                           />
-                        ) : null;
-                      })}
+                        ) : null,
+                      )}
                     </svg>
-                    {laneEdges.map((e) => {
-                      const ends = renderEdge(e, laneSessionIds, rowY, pctAt);
+                    {placed.map(({ e, ends }) => {
                       if (!ends) return null;
                       // A full connector still gets its two endpoints as dots;
                       // a half connector gets one clickable, named marker — the

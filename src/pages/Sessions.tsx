@@ -102,8 +102,6 @@ export default function Sessions() {
     return parts.map((p, i) => (i % 2 === 1 ? <mark key={i}>{p}</mark> : p));
   }
 
-  // Deep-link a search hit to its message: right view (?branch), right page,
-  // anchor+flash. Page size lives in messageLink, shared with SessionDetail.
   // Cross-session traffic, from the shared /api/peers graph — never from the
   // session payload, which knows nothing of the other end. A failed fetch shows
   // no badge rather than "0".
@@ -124,6 +122,8 @@ export default function Sessions() {
     );
   }
 
+  // Deep-link a search hit to its message: right view (?branch), right page,
+  // anchor+flash. Page size lives in messageLink, shared with SessionDetail.
   function sessionLink(id: string): string {
     const hit = hitBySession?.get(id);
     return (hit && messageLink(id, hit)) || `/sessions/${id}`;

@@ -41,7 +41,6 @@ function out(over: Partial<PeerOutboundEvent> = {}): PeerOutboundEvent {
     fork: null,
     timestamp: "2026-08-27T10:00:00.000Z",
     bodyHash: null,
-    bodyLength: 0,
     direction: "out",
     msgId: null,
     toolUseId: `t${seq}`,
@@ -51,7 +50,6 @@ function out(over: Partial<PeerOutboundEvent> = {}): PeerOutboundEvent {
     summary: "sum",
     outcome: "sent",
     targetHint: "peer",
-    suggestedRef: null,
     ...over,
   };
 }
@@ -66,12 +64,10 @@ function inb(over: Partial<PeerInboundEvent> = {}): PeerInboundEvent {
     fork: null,
     timestamp: "2026-08-27T10:00:01.000Z",
     bodyHash: null,
-    bodyLength: 0,
     direction: "in",
     msgId: null,
     rawFrom: "uds:/tmp/cc-socks/1.sock",
     peerNameHint: "peer",
-    peerPid: 1,
     parseComplete: true,
     ...over,
   };

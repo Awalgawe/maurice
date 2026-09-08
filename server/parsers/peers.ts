@@ -40,9 +40,6 @@ const PEER_PROOFS = ["— Claude session, on this machine", "another Claude sess
 const REF_TARGET = /^\S.*\s\[[0-9a-zA-Z]{4,}\]$/;
 /** A bare hex id: an in-process subagent, never a peer session. */
 const IN_PROCESS_TARGET = /^[0-9a-f]{16,}$/;
-/** The `name [ref]` a needs_ref failure proposes, on its own suggestion line. */
-const SUGGESTED_REF = /^\s*(\S.*?\s\[[0-9a-zA-Z]{4,}\])\s+—\s+Claude session/m;
-const SUGGESTED_REF_FALLBACK = /"to"\s*:\s*"([^"]+\s\[[0-9a-zA-Z]{4,}\])"/;
 
 const SEND_MESSAGE = "SendMessage";
 
@@ -104,15 +101,6 @@ function attr(attrs: string, name: string): string | null {
   return m ? m[1] : null;
 }
 
-/** `uds:/tmp/cc-socks/93692.sock` → 93692. */
-function pidFromSocket(from: string | null): number | null {
-  if (!from) return null;
-  const m = /\/(\d+)\.sock$/.exec(from);
-  if (!m) return null;
-  const n = Number(m[1]);
-  return Number.isFinite(n) ? n : null;
-}
-
 /**
  * Decode a received turn. NEVER returns null: a truncated envelope yields
  * partial fields and `parseComplete: false`, so a peer turn is never demoted
@@ -130,11 +118,7 @@ export function parsePeerInbound(obj: any): PeerInbound {
   const rawFrom: string | null = typeof structured?.from === "string" ? structured.from : attr(attrs, "from");
   const nameHint: string | null =
     typeof structured?.name === "string" ? structured.name : attr(attrs, "from-name");
-  const fromMode: string | null =
-    typeof structured?.fromMode === "string" ? structured.fromMode : attr(attrs, "from-mode");
   const msgId: string | null = typeof structured?.msg_id === "string" ? structured.msg_id : null;
-  const pid =
-    typeof structured?.verifiedPeerPid === "number" ? structured.verifiedPeerPid : pidFromSocket(rawFrom);
 
   let body: string | null = null;
   let parseComplete = false;
@@ -152,7 +136,7 @@ export function parsePeerInbound(obj: any): PeerInbound {
     parseComplete = false;
   }
 
-  return { body, rawEnvelope: raw, rawFrom, peerNameHint: nameHint, peerPid: pid, msgId, fromMode, parseComplete };
+  return { body, rawEnvelope: raw, rawFrom, peerNameHint: nameHint, msgId, parseComplete };
 }
 
 // ---------------------------------------------------------------------------
@@ -187,13 +171,12 @@ function nameHintFromTarget(rawTarget: string | null): string | null {
 interface OutcomeRead {
   outcome: PeerOutcome;
   msgId: string | null;
-  suggestedRef: string | null;
 }
 
 /** Classify a SendMessage tool_result. Only KNOWN shapes are read; anything
  *  else is `failed_unknown` and carries nothing forward. */
-export function classifyOutcome(result: string | null, isError: boolean, denied: boolean): OutcomeRead {
-  const none: OutcomeRead = { outcome: "failed_unknown", msgId: null, suggestedRef: null };
+export function classifyOutcome(result: string | null, denied: boolean): OutcomeRead {
+  const none: OutcomeRead = { outcome: "failed_unknown", msgId: null };
   if (result === null) return { ...none, outcome: "no_result" };
   if (denied) return { ...none, outcome: "denied" };
   if (result.includes("InputValidationError")) return { ...none, outcome: "invalid_input" };
@@ -206,26 +189,17 @@ export function classifyOutcome(result: string | null, isError: boolean, denied:
   }
   if (parsed && typeof parsed === "object") {
     if (parsed.success === true) {
-      return {
-        outcome: "sent",
-        msgId: typeof parsed.msg_id === "string" ? parsed.msg_id : null,
-        suggestedRef: null,
-      };
+      return { outcome: "sent", msgId: typeof parsed.msg_id === "string" ? parsed.msg_id : null };
     }
     if (parsed.success === false) {
       const m: string = typeof parsed.message === "string" ? parsed.message : "";
-      if (m.includes("is not an agent in this conversation")) {
-        const s = SUGGESTED_REF.exec(m) ?? SUGGESTED_REF_FALLBACK.exec(m);
-        return { outcome: "needs_ref", msgId: null, suggestedRef: s ? s[1] : null };
-      }
-      if (m.includes("is reachable") || m.includes("reachable.")) {
-        return { ...none, outcome: "unreachable" };
-      }
+      if (m.includes("is not an agent in this conversation")) return { ...none, outcome: "needs_ref" };
+      // Observed wording: "No agent named 'X' is reachable."
+      if (m.includes("is reachable")) return { ...none, outcome: "unreachable" };
       if (m.includes("could not be resumed")) return { ...none, outcome: "not_resumable" };
       return none;
     }
   }
-  void isError; // shape, not the error flag, decides — kept for future probes
   return none;
 }
 
@@ -238,7 +212,6 @@ export function classifyOutcome(result: string | null, isError: boolean, denied:
 export interface PeerRuntimeEvent {
   eventId: string;
   resultExcerpt: string | null;
-  body: string | null;
 }
 
 export interface PeerCollectorResult {
@@ -307,16 +280,14 @@ export function createPeerCollector(sessionId: string): PeerCollector {
         fork: null,
         timestamp: typeof o.timestamp === "string" ? o.timestamp : null,
         bodyHash: hashBody(parsed.body),
-        bodyLength: parsed.body?.length ?? 0,
         direction: "in",
         msgId: parsed.msgId,
         rawFrom: parsed.rawFrom,
         peerNameHint: parsed.peerNameHint,
-        peerPid: parsed.peerPid,
         parseComplete: parsed.parseComplete,
       };
       events.push(ev);
-      runtime.set(eventId, { eventId, resultExcerpt: null, body: parsed.body });
+      runtime.set(eventId, { eventId, resultExcerpt: null });
       if (uuid) inboundByUuid.set(uuid, { ...parsed, eventId });
       // A received turn also carries no tool_result, so nothing else to do.
       return;
@@ -346,7 +317,6 @@ export function createPeerCollector(sessionId: string): PeerCollector {
           fork: null,
           timestamp: typeof o.timestamp === "string" ? o.timestamp : null,
           bodyHash: hashBody(body),
-          bodyLength: body?.length ?? 0,
           direction: "out",
           msgId: null,
           toolUseId,
@@ -358,9 +328,8 @@ export function createPeerCollector(sessionId: string): PeerCollector {
           // stays `no_result`, which is strictly reserved for that case.
           outcome: "no_result",
           targetHint: classifyTarget(rawTarget, null),
-          suggestedRef: null,
         };
-        const rt: PeerRuntimeEvent = { eventId, resultExcerpt: null, body };
+        const rt: PeerRuntimeEvent = { eventId, resultExcerpt: null };
         events.push(ev);
         runtime.set(eventId, rt);
         outboundByLineBlock.set(`${lineOrdinal}:${blockOrdinal}`, eventId);
@@ -381,10 +350,9 @@ export function createPeerCollector(sessionId: string): PeerCollector {
         pending.resolved = true;
         const text = stringifyResultContent(c);
         const denied = o.toolDenialKind != null || o.interruptedMessageId != null || isUserInterruption(c);
-        const read = classifyOutcome(text, c.is_error === true, denied);
+        const read = classifyOutcome(text, denied);
         pending.ev.outcome = read.outcome;
         pending.ev.msgId = read.msgId;
-        pending.ev.suggestedRef = read.suggestedRef;
         // Re-run on the COMPLETE result: the proof of a peer target may sit
         // far past any excerpt boundary.
         pending.ev.targetHint = classifyTarget(pending.ev.rawTarget, text);

@@ -281,7 +281,7 @@ export function computePeerGraph(index: SessionMeta[], registry: PeerRegistrySna
   // --- Per-session rollup ---------------------------------------------------
   const bySession: PeerGraph["bySession"] = {};
   function bucket(sessionId: string) {
-    return (bySession[sessionId] ??= { peers: [], edgeKeys: [], unresolvedCount: 0 });
+    return (bySession[sessionId] ??= { peers: [], unresolvedCount: 0 });
   }
   const peerAcc = new Map<string, Map<string, PeerRef>>(); // sessionId → peerSessionId → ref
 
@@ -311,8 +311,8 @@ export function computePeerGraph(index: SessionMeta[], registry: PeerRegistrySna
   }
 
   for (const e of edges) {
-    bucket(e.from.sessionId).edgeKeys.push(e.key);
-    bucket(e.to.sessionId).edgeKeys.push(e.key);
+    bucket(e.from.sessionId);
+    bucket(e.to.sessionId);
     note(e.from.sessionId, e.to, "sent");
     note(e.to.sessionId, e.from, "received");
   }

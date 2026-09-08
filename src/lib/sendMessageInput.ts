@@ -24,6 +24,14 @@ const BODY_KEYS = ["message", "content", "prompt"] as const;
 
 const str = (v: unknown): string | null => (typeof v === "string" && v !== "" ? v : null);
 
+/** `v` is the body itself, or the body truncated with an ellipsis. */
+function isEchoOf(v: unknown, body: string | null): boolean {
+  if (typeof v !== "string" || body === null) return false;
+  if (v === body) return true;
+  const stem = v.replace(/(…|\.\.\.)$/, "");
+  return stem !== v && stem.length > 0 && body.startsWith(stem);
+}
+
 export function readSendMessage(input: Record<string, unknown>): SendMessageFields {
   const to = str(input.to);
   const summary = str(input.summary);
@@ -34,8 +42,10 @@ export function readSendMessage(input: Record<string, unknown>): SendMessageFiel
   for (const [k, v] of Object.entries(input)) {
     if (k === "to" || k === "summary" || k === bodyKey) continue;
     // A duplicate of the body under another name, and the redundant echo of
-    // `to`, carry nothing the header does not already show.
-    if ((BODY_KEYS as readonly string[]).includes(k) && v === body) continue;
+    // `to`, carry nothing the header does not already show. The harness also
+    // logs `content` as a TRUNCATED copy of `message`, so an ellipsised prefix
+    // of the body counts as the same duplicate.
+    if ((BODY_KEYS as readonly string[]).includes(k) && isEchoOf(v, body)) continue;
     if (k === "recipient" && v === to) continue;
     if (k === "type" && v === "message") continue;
     // An empty body key is the absence of a body, not a field worth dumping.
