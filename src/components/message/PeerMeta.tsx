@@ -3,6 +3,7 @@ import type { PeerEventView, PeerInbound } from "../../types";
 import { useFmt } from "../../hooks/useFmt";
 import { useT } from "../../hooks/useT";
 import { usePeerEvent } from "./peerContext";
+import { readSendMessage } from "../../lib/sendMessageInput";
 
 /** Live-state dot. The status is a closed union, so the key always exists. */
 function LiveDot({ view }: { view: PeerEventView }) {
@@ -81,9 +82,7 @@ export function SendMessageInput({
   const t = useT();
   const { fmtTokens } = useFmt();
   const view = usePeerEvent(peerEventId);
-  const to = typeof input.to === "string" ? input.to : null;
-  const summary = typeof input.summary === "string" ? input.summary : null;
-  const message = typeof input.message === "string" ? input.message : null;
+  const { to, summary, body, bodyKey, rest } = readSendMessage(input);
   const label = view?.peerLabel ?? to;
 
   return (
@@ -99,12 +98,22 @@ export function SendMessageInput({
         {view && <Counterpart view={view} />}
       </span>
       {summary && <div className="peer-summary">{summary}</div>}
-      {message && (
+      {body && (
         <details className="peer-envelope">
           <summary>
-            {t("peer_message_body")} · {fmtTokens(message.length)} {t("peer_chars")}
+            {t("peer_message_body")}
+            {bodyKey !== "message" && <span className="muted"> ({bodyKey})</span>} · {fmtTokens(body.length)}{" "}
+            {t("peer_chars")}
           </summary>
-          <pre>{message}</pre>
+          <pre>{body}</pre>
+        </details>
+      )}
+      {/* Whatever this renderer does not know about stays visible: it replaced
+          the generic JSON dump, so it must not lose what that dump showed. */}
+      {Object.keys(rest).length > 0 && (
+        <details className="peer-envelope">
+          <summary>{t("peer_other_fields")}</summary>
+          <pre>{JSON.stringify(rest, null, 2)}</pre>
         </details>
       )}
       {view?.resultExcerpt && view.outcome !== "sent" && (

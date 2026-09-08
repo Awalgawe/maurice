@@ -356,6 +356,7 @@ export const fr = {
   timeline_lane_collapse: "Replier",
   timeline_peer_edges: "échanges",
   peer_message_body: "Corps du message",
+  peer_other_fields: "Autres champs de l’appel",
   peer_chars: "caractères",
   peer_none: "Aucun message inter-sessions",
   minimap_aria: "Minimap du fil — cliquer pour naviguer",

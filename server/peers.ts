@@ -121,14 +121,25 @@ export function computePeerGraph(index: SessionMeta[], registry: PeerRegistrySna
     if (e.name) registryNameBySessionId.set(e.sessionId, e.name);
   }
 
+  // A send aimed at an in-process subagent is not a cross-session exchange at
+  // all, so it is dropped BEFORE the joins, not after: left in, its body hash
+  // (or msg_id) could be picked up by an unrelated receive and become an edge
+  // whose source never left this session — a false link, and one that also hid
+  // itself from the excludedInProcess count by being consumed.
   const owned: Owned[] = [];
+  let excludedInProcess = 0;
   for (const meta of index) {
     for (const ev of meta.peerEvents ?? []) {
+      const hint = ev.direction === "out" ? refineHint(ev, registry) : "peer";
+      if (ev.direction === "out" && hint === "in_process") {
+        excludedInProcess++;
+        continue;
+      }
       owned.push({
         ev,
         sessionId: meta.id,
         projectId: meta.projectId,
-        hint: ev.direction === "out" ? refineHint(ev, registry) : "peer",
+        hint,
         consumed: false,
         ambiguous: false,
       });
@@ -234,7 +245,6 @@ export function computePeerGraph(index: SessionMeta[], registry: PeerRegistrySna
 
   // --- Passes 3 & 4: everything left is classified, exactly once ------------
   const unresolved: UnresolvedPeerEvent[] = [];
-  let excludedInProcess = 0;
 
   function push(o: Owned, reason: UnresolvedReason): void {
     unresolved.push({
@@ -249,12 +259,6 @@ export function computePeerGraph(index: SessionMeta[], registry: PeerRegistrySna
   for (const o of owned) {
     if (o.consumed) continue;
     if (o.ev.direction === "out") {
-      // An in-process subagent target is not a peer exchange at all: it is
-      // neither an edge nor an unresolved exchange, only a count.
-      if (o.hint === "in_process") {
-        excludedInProcess++;
-        continue;
-      }
       if (o.ambiguous) {
         push(o, "ambiguous");
         continue;

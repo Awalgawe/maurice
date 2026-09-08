@@ -180,6 +180,21 @@ describe("computePeerGraph — body-hash fallback", () => {
     expect(g.unresolved.map((u) => u.reason)).toEqual(["ambiguous", "ambiguous", "ambiguous"]);
   });
 
+  it("never joins an in-process send, even when a receive shares its body", () => {
+    const index = [
+      session("A", [
+        out({ bodyHash: H, targetHint: "in_process", rawTarget: "a6f4784e943247236", timestamp: "2026-08-27T10:00:00.000Z" }),
+      ]),
+      session("B", [inb({ bodyHash: H, timestamp: "2026-08-27T10:00:01.000Z" })]),
+    ];
+    const g = run(index);
+    // The send never left session A: it is not a candidate for any join, and it
+    // stays counted as excluded instead of hiding in a consumed edge.
+    expect(g.edges).toHaveLength(0);
+    expect(g.excludedInProcess).toBe(1);
+    expect(g.unresolved.map((u) => `${u.at.sessionId}:${u.reason}`)).toEqual(["B:no_counterpart"]);
+  });
+
   it("draws nothing when two receives compete for one send in the window", () => {
     const index = [
       session("A", [out({ bodyHash: H, timestamp: "2026-08-27T10:00:00.000Z" })]),

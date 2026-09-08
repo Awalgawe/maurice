@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import type { CacheRewriteRef, MemoryEntry, SessionDetail as Detail } from "../types";
 import { getDetail, getSessionMemories } from "../api";
@@ -31,15 +31,11 @@ export default function SessionDetail() {
   const [memoriesErr, setMemoriesErr] = useState<string | null>(null);
   const [memoriesNonce, setMemoriesNonce] = useState(0);
   const [reloadNonce, setReloadNonce] = useState(0);
-  const prevId = useRef<string | undefined>(undefined);
 
-  // When switching to a different session, reset to page 1 before fetching.
-  useEffect(() => {
-    if (!id || prevId.current === id) return;
-    const switching = prevId.current !== undefined;
-    prevId.current = id;
-    if (switching && pageNum !== 1) setSearchParams({});
-  }, [id, pageNum, setSearchParams]);
+  // No page reset on a session switch: nothing in the app carries the current
+  // query over to another session (every link is either bare or a deep link
+  // built by messageLink), so a page/branch present here was asked for — a
+  // reset could only destroy the target of a cross-session or search deep link.
 
   useEffect(() => {
     if (!id) return;

@@ -343,6 +343,7 @@ export const en: Record<I18nKey, string> = {
   timeline_lane_collapse: "Collapse",
   timeline_peer_edges: "exchanges",
   peer_message_body: "Message body",
+  peer_other_fields: "Other call fields",
   peer_chars: "characters",
   peer_none: "No cross-session messages",
   minimap_aria: "Thread minimap — click to navigate",
