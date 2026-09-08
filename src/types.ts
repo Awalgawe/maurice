@@ -204,7 +204,9 @@ export interface ThreadMessage {
   forksHere: string[];
   // Set only on `peer_in` turns: the decoded cross-session envelope plus the
   // local event id the resolved view is keyed by.
-  peerIn?: PeerInbound & { eventId: string };
+  // A received turn's decoded envelope. `eventId` is null when no resolved view
+  // can exist for it — a subagent transcript, which the peer graph never sees.
+  peerIn?: PeerInbound & { eventId: string | null };
 }
 
 /** One cache-rewrite occurrence located within a served view, so the aside

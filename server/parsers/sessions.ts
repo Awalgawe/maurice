@@ -992,23 +992,30 @@ function toThreadMessage(
   toolNames: Map<string, string>,
   cacheRewrite: CacheRewrite | null = null,
   tokens: TokenTotals | null = null,
+  /** The collector's decode of this turn, when the caller has one (the session
+   *  thread). A subagent transcript has no peer collector, so the builder
+   *  decodes it itself and leaves `eventId` null: it is outside the graph. */
+  collected?: (PeerInbound & { eventId: string }) | undefined,
 ): ThreadMessage {
   const msg = obj.message;
   const blocks = extractBlocks(msg);
   const isError = hasRealError(obj);
   const kind = classifyMessage(obj, blocks, toolNames);
   // A received turn renders as its decoded body; the protocol envelope stays
-  // available on `peerIn` for a collapsible block. `eventId` is filled by the
-  // annotation pass of getParsedSession — "" means "no resolved view for it"
-  // (a subagent transcript, which is out of scope for the peer graph).
-  let peerIn: (PeerInbound & { eventId: string }) | undefined;
+  // available on `peerIn` for a collapsible block.
+  let peerIn: (PeerInbound & { eventId: string | null }) | undefined;
   if (kind === "peer_in") {
-    peerIn = { ...parsePeerInbound(obj), eventId: "" };
-    const body = peerIn.body;
-    for (const b of blocks) {
-      if (b.kind === "text") {
-        (b as { text: string }).text = body ?? "";
-        break;
+    peerIn = collected ?? { ...parsePeerInbound(obj), eventId: null };
+    // An envelope that could not be read keeps its raw text: a turn rendering
+    // blank is worse than one rendering its envelope (parseComplete says so,
+    // and PeerEnvelope shows it in full).
+    if (peerIn.body !== null) {
+      const body = peerIn.body;
+      for (const b of blocks) {
+        if (b.kind === "text") {
+          b.text = body;
+          break;
+        }
       }
     }
   }
@@ -1160,7 +1167,9 @@ async function getParsedSession(meta: SessionMeta): Promise<ParsedSession> {
       }
     }
     if (!RENDERABLE.has(obj.type)) continue;
-    messages.push(toThreadMessage(obj, toolNames, rewrite, turnTokens));
+    messages.push(
+      toThreadMessage(obj, toolNames, rewrite, turnTokens, obj.uuid ? peerCollector.inboundFor(obj.uuid) : undefined),
+    );
     messageLines.push(lineOrdinal);
   }
 
@@ -1178,10 +1187,6 @@ async function getParsedSession(meta: SessionMeta): Promise<ParsedSession> {
   const peer = peerCollector.finish();
   for (let i = 0; i < messages.length; i++) {
     const m = messages[i];
-    if (m.peerIn && m.uuid) {
-      const found = peer.inboundByUuid.get(m.uuid);
-      if (found) m.peerIn.eventId = found.eventId;
-    }
     let blockOrdinal = -1;
     for (const b of m.blocks) {
       if (b.kind !== "tool_use") continue;

@@ -16,7 +16,7 @@ export const PeerEventsContext = createContext<Record<string, PeerEventView>>({}
 
 /** The resolved view of one event, or null when there is none (unknown key,
  *  subagent thread, or an event the graph could not place). */
-export function usePeerEvent(eventId: string | undefined): PeerEventView | null {
+export function usePeerEvent(eventId: string | null | undefined): PeerEventView | null {
   const views = useContext(PeerEventsContext);
   if (!eventId) return null;
   return views[eventId] ?? null;

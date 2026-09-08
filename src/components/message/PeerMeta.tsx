@@ -40,7 +40,7 @@ function Counterpart({ view }: { view: PeerEventView }) {
  * `Block`'s signature is `{ b, compact }` — it never sees the turn. This
  * component is the leaf that holds the eventId and reads the context.
  */
-export function PeerInboundMeta({ peerIn }: { peerIn: PeerInbound & { eventId: string } }) {
+export function PeerInboundMeta({ peerIn }: { peerIn: PeerInbound & { eventId: string | null } }) {
   const t = useT();
   const view = usePeerEvent(peerIn.eventId);
   const label = view?.peerLabel ?? peerIn.peerNameHint;

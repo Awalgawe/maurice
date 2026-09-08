@@ -254,6 +254,10 @@ export interface PeerCollectorResult {
 
 export interface PeerCollector {
   add(obj: unknown, lineOrdinal: number): void;
+  /** The received turn of `uuid`, already decoded by `add` — so the thread
+   *  builder renders the same decode the graph was built from, instead of
+   *  parsing the envelope a second time. */
+  inboundFor(uuid: string): (PeerInbound & { eventId: string }) | undefined;
   finish(): PeerCollectorResult;
 }
 
@@ -393,7 +397,11 @@ export function createPeerCollector(sessionId: string): PeerCollector {
     return { events, runtime, inboundByUuid, outboundByLineBlock };
   }
 
-  return { add, finish };
+  function inboundFor(uuid: string) {
+    return inboundByUuid.get(uuid);
+  }
+
+  return { add, inboundFor, finish };
 }
 
 /**
