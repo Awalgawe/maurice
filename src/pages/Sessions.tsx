@@ -1,10 +1,12 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
+import { messageLink } from "../lib/messageLink";
 import { Link, useSearchParams } from "react-router-dom";
 import type { Facets, SearchHit, SessionMeta } from "../types";
 import { getFilters, search as apiSearch } from "../api";
 import { skillLabel, modelLabel, totalTokens } from "../format";
 import { useSortable } from "../hooks/useSortable";
 import { useSessions } from "../hooks/useSessions";
+import { usePeers } from "../hooks/usePeers";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { useFmt } from "../hooks/useFmt";
 import { useT } from "../hooks/useT";
@@ -37,6 +39,7 @@ export default function Sessions() {
   const t = useT();
   const { fmtDate, fmtDayLong, fmtTokens, fmtCost } = useFmt();
   const { sessions, status, error, reload } = useSessions(true);
+  const { graph: peers } = usePeers();
   const [facets, setFacets] = useState<Facets | null>(null);
   const [facetsErr, setFacetsErr] = useState<string | null>(null);
   const [facetsNonce, setFacetsNonce] = useState(0);
@@ -99,18 +102,31 @@ export default function Sessions() {
     return parts.map((p, i) => (i % 2 === 1 ? <mark key={i}>{p}</mark> : p));
   }
 
-  // Deep-link a search hit to its message: right view (?branch), right page
-  // (from the hit's position — must mirror SessionDetail's PAGE), anchor+flash.
-  const DETAIL_PAGE = 200;
+  // Cross-session traffic, from the shared /api/peers graph — never from the
+  // session payload, which knows nothing of the other end. A failed fetch shows
+  // no badge rather than "0".
+  function peerBadge(id: string) {
+    const own = peers?.bySession[id];
+    if (!own) return null;
+    const n = own.peers.length;
+    // Count only, no noun: a "1 Pairs" would be wrong in every language that
+    // inflects. The wording lives in the title.
+    const title =
+      `${t("peer_badge_title")} · ${n} ${t("peer_badge_label")}` +
+      (own.unresolvedCount > 0 ? ` · ${own.unresolvedCount} ${t("peer_unresolved_title")}` : "");
+    return (
+      <Chip title={title}>
+        ⇄ {n}
+        {own.unresolvedCount > 0 ? " ⚠" : ""}
+      </Chip>
+    );
+  }
+
+  // Deep-link a search hit to its message: right view (?branch), right page,
+  // anchor+flash. Page size lives in messageLink, shared with SessionDetail.
   function sessionLink(id: string): string {
     const hit = hitBySession?.get(id);
-    if (!hit || !hit.uuid) return `/sessions/${id}`;
-    const qs = new URLSearchParams();
-    const page = Math.floor(hit.index / DETAIL_PAGE) + 1;
-    if (page > 1) qs.set("page", String(page));
-    if (hit.fork) qs.set("branch", hit.fork);
-    const q = qs.toString();
-    return `/sessions/${id}${q ? `?${q}` : ""}#msg-${hit.uuid}`;
+    return (hit && messageLink(id, hit)) || `/sessions/${id}`;
   }
 
   const rows = useMemo(() => {
@@ -242,6 +258,7 @@ export default function Sessions() {
                 <Link to={sessionLink(s.id)}>
                   <strong>{s.projectLabel}</strong>
                 </Link>
+                {peerBadge(s.id)}
                 <div className="muted" style={{ fontSize: 12 }}>
                   {hitBySession?.has(s.id) ? (
                     <>

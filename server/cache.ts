@@ -9,7 +9,7 @@ import type { SessionMeta } from "../src/types.ts";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 let CACHE_DIR = path.join(__dirname, "..", ".cache");
 let CACHE_FILE = path.join(CACHE_DIR, "index.json");
-const CACHE_VERSION = 22; // 22: per-day breakdown (byDay) for windowed Dashboard KPIs
+const CACHE_VERSION = 25; // 25: peer events shed their unread fields (bodyLength, peerPid, suggestedRef)
 
 /** Redirect the metadata cache to a scratch dir so tests never touch the real
  *  project-local .cache/ (a dev server may be reading/writing it concurrently). */

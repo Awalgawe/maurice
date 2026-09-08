@@ -4,7 +4,10 @@ import fs from "node:fs";
 import { execFile } from "node:child_process";
 import path from "node:path";
 import { getIndex } from "../cache.ts";
-import { readDetail, readSubagentDetail } from "../parsers/sessions.ts";
+import { readSubagentDetail } from "../parsers/sessions.ts";
+import { readSessionDetail } from "../sessionDetail.ts";
+import { computePeerGraph } from "../peers.ts";
+import { peerRegistry } from "../peerRegistry.ts";
 import { listMemories } from "../parsers/memory.ts";
 import { listPlans, resolvePlanPath, resolveProjectPath } from "../parsers/plans.ts";
 import { listHooks } from "../parsers/hooks.ts";
@@ -23,9 +26,18 @@ export const api = Router();
 
 const PERF = !!process.env.PERF;
 
+/** The list response drops the two index-only fields. `requestIds` (the
+ *  continuation join) and `peerEvents` (the peer join) exist for the
+ *  cross-session joins the server computes itself; no client reads either, and
+ *  together they are ~30% of the payload. The in-memory index keeps them. */
+function listRow(s: SessionMeta): SessionMeta {
+  const { requestIds: _ids, peerEvents: _events, ...row } = s;
+  return row;
+}
+
 api.get("/sessions", async (_req, res) => {
   const index = await getIndex();
-  res.json(index);
+  res.json(index.map(listRow));
 });
 
 api.get("/active", async (_req, res) => {
@@ -212,9 +224,15 @@ api.get("/sessions/:id", async (req, res) => {
   const offset = Math.max(0, Number(req.query.offset) || 0);
   const limit = Math.min(500, Math.max(1, Number(req.query.limit) || 100));
   const branch = typeof req.query.branch === "string" && req.query.branch ? req.query.branch : null;
-  const detail = await readDetail(meta, offset, limit, branch);
+  const index = await getIndex();
+  const detail = await readSessionDetail(index, peerRegistry(index), meta, offset, limit, branch);
   if (!detail) return res.status(404).json({ error: "branch not found" });
   res.json(detail);
+});
+
+api.get("/peers", async (_req, res) => {
+  const index = await getIndex();
+  res.json(computePeerGraph(index, peerRegistry(index)));
 });
 
 api.get("/sessions/:id/subagents/:ref", async (req, res) => {

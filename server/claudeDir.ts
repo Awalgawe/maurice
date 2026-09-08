@@ -1,6 +1,7 @@
 import os from "node:os";
 import path from "node:path";
 import fs from "node:fs";
+import type { PeerRegistrySnapshot } from "../src/types.ts";
 
 /** Root Claude directory we read from. Read-only — we never write here. */
 export const CLAUDE_DIR =
@@ -118,4 +119,55 @@ export function projectLabel(projectPath: string): string {
   const parts = projectPath.split("/").filter(Boolean);
   if (parts.length <= 2) return parts.join("/");
   return parts.slice(-2).join("/");
+}
+
+export const SESSIONS_REGISTRY_DIR = path.join(CLAUDE_DIR, "sessions");
+
+/**
+ * Snapshot of the live peer registry (`~/.claude/sessions/<pid>.json`), the
+ * files Claude Code writes so sibling sessions can find each other.
+ *
+ * Read-only, tolerant of the directory being absent, and NEVER folded into a
+ * cache keyed on a transcript's (size, mtime): the registry is disk state that
+ * changes on its own, and entries are cleaned up over time. It *names* a peer
+ * and gives its live state — it is never an identity key, and never enough on
+ * its own to draw an edge.
+ */
+export function readPeerRegistry(): PeerRegistrySnapshot {
+  const snap: PeerRegistrySnapshot = { byPid: {}, bySocket: {}, byName: {}, knownAgentTypes: [] };
+  let entries: string[];
+  try {
+    entries = fs.readdirSync(SESSIONS_REGISTRY_DIR);
+  } catch {
+    return snap;
+  }
+  for (const name of entries) {
+    if (!name.endsWith(".json")) continue;
+    let raw: string;
+    try {
+      raw = fs.readFileSync(path.join(SESSIONS_REGISTRY_DIR, name), "utf8");
+    } catch {
+      continue; // vanished between readdir and read
+    }
+    let o: any;
+    try {
+      o = JSON.parse(raw);
+    } catch {
+      continue;
+    }
+    const pid = Number(o?.pid);
+    if (!Number.isFinite(pid) || typeof o?.sessionId !== "string") continue;
+    const label = typeof o.name === "string" ? o.name : "";
+    const socket = typeof o.messagingSocketPath === "string" ? o.messagingSocketPath : "";
+    snap.byPid[pid] = {
+      sessionId: o.sessionId,
+      name: label,
+      cwd: typeof o.cwd === "string" ? o.cwd : "",
+      socket,
+      status: typeof o.status === "string" ? o.status : null,
+    };
+    if (socket) snap.bySocket[`uds:${socket}`] = pid;
+    if (label) (snap.byName[label] ??= []).push(pid);
+  }
+  return snap;
 }

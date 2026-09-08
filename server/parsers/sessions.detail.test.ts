@@ -260,3 +260,44 @@ describe("readDetail per-message token dedup", () => {
     expect(viewOutput).toBe(meta4.tokens.output);
   });
 });
+
+describe("readDetail — a received turn", () => {
+  const PEER_SESSION = "s-peer-in";
+  const OPEN = '<cross-session-message from="uds:/tmp/cc-socks/77.sock" from-name="peer-a" from-mode="prompting">';
+  const received = (uuid: string, content: string) => ({
+    uuid,
+    parentUuid: null,
+    type: "user",
+    isMeta: true,
+    timestamp: "2026-01-01T10:00:00Z",
+    cwd: "/tmp/proj",
+    message: { role: "user", content },
+  });
+
+  async function detailOf(lines: object[]) {
+    const fp = sessionFilePath(PROJECT, PEER_SESSION);
+    fs.writeFileSync(fp, lines.map((l) => JSON.stringify(l)).join("\n") + "\n");
+    const stat = fs.statSync(fp);
+    const meta = await buildMeta({ id: PEER_SESSION, projectId: PROJECT, filePath: fp, size: stat.size, mtimeMs: stat.mtimeMs });
+    return (await readDetail(meta, 0, 100))!;
+  }
+
+  it("renders the decoded body and carries the collector's event key", async () => {
+    const raw = `Another Claude session sent a message:\n${OPEN}\nreview the batching change\n</cross-session-message>`;
+    const d = await detailOf([received("p1", raw)]);
+    const m = d.messages.find((x) => x.kind === "peer_in")!;
+    expect(m.peerIn!.eventId).toBe(`${PEER_SESSION}:in:p1`);
+    expect(m.peerIn!.parseComplete).toBe(true);
+    expect(m.blocks[0]).toEqual({ kind: "text", text: "review the batching change" });
+  });
+
+  it("keeps the raw text when the envelope cannot be read, never blanking the turn", async () => {
+    // Opening tag, no closing tag, nothing after it: there is no body to show.
+    const raw = `Another Claude session sent a message:\n${OPEN}`;
+    const d = await detailOf([received("p2", raw)]);
+    const m = d.messages.find((x) => x.kind === "peer_in")!;
+    expect(m.peerIn!.body).toBeNull();
+    expect(m.peerIn!.parseComplete).toBe(false);
+    expect((m.blocks[0] as { text: string }).text).toBe(raw);
+  });
+});

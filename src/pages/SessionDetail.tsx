@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import type { CacheRewriteRef, MemoryEntry, SessionDetail as Detail } from "../types";
 import { getDetail, getSessionMemories } from "../api";
@@ -7,8 +7,9 @@ import { useT } from "../hooks/useT";
 import { ThreadDetail } from "../components/thread/ThreadDetail";
 import { Chip } from "../components/ui/Chip";
 import { ErrorState } from "../components/ui/ErrorState";
+import { DETAIL_PAGE } from "../lib/messageLink";
 
-const PAGE = 200;
+const PAGE = DETAIL_PAGE;
 
 export default function SessionDetail() {
   const t = useT();
@@ -30,15 +31,11 @@ export default function SessionDetail() {
   const [memoriesErr, setMemoriesErr] = useState<string | null>(null);
   const [memoriesNonce, setMemoriesNonce] = useState(0);
   const [reloadNonce, setReloadNonce] = useState(0);
-  const prevId = useRef<string | undefined>(undefined);
 
-  // When switching to a different session, reset to page 1 before fetching.
-  useEffect(() => {
-    if (!id || prevId.current === id) return;
-    const switching = prevId.current !== undefined;
-    prevId.current = id;
-    if (switching && pageNum !== 1) setSearchParams({});
-  }, [id, pageNum, setSearchParams]);
+  // No page reset on a session switch: nothing in the app carries the current
+  // query over to another session (every link is either bare or a deep link
+  // built by messageLink), so a page/branch present here was asked for — a
+  // reset could only destroy the target of a cross-session or search deep link.
 
   useEffect(() => {
     if (!id) return;
@@ -123,6 +120,19 @@ export default function SessionDetail() {
     }
   }
   const pages = Math.ceil(data.total / PAGE);
+  // Session-level peer summary. Counted over the views the graph actually
+  // recognized as exchanges — an edge, or an ambiguity it refused to resolve.
+  // A send the graph excluded (an in-process subagent target) is not
+  // cross-session traffic: counting it here would make this chip disagree with
+  // both the Sessions list badge and the graph's own totals.
+  const peerViews = Object.values(data.peerEventViews ?? {}).filter((v) => v.edge || v.unresolved);
+  const peerCounts = peerViews.length
+    ? {
+        peers: data.peers.length,
+        sent: peerViews.filter((v) => v.direction === "out").length,
+        received: peerViews.filter((v) => v.direction === "in").length,
+      }
+    : null;
 
   return (
     <ThreadDetail
@@ -135,9 +145,18 @@ export default function SessionDetail() {
           {m.ticket && <Chip variant="ticket">{m.ticket}</Chip>}
           {m.branches.map((b) => <Chip key={b}>{b}</Chip>)}
           {m.skills.map((s) => <Chip variant="skill" key={s}>{skillLabel(s)}</Chip>)}
+          {peerCounts && (
+            <Chip
+              title={`${t("peer_badge_title")} · ${peerCounts.peers} ${t("peer_badge_label")}`}
+            >
+              ⇄ {peerCounts.sent} {t("peer_badge_sent")} · {peerCounts.received} {t("peer_badge_received")}
+            </Chip>
+          )}
         </>
       }
       messages={data.messages}
+      continuity={data.continuity}
+      peerEventViews={data.peerEventViews}
       context={data.context}
       modelChanges={modelChanges}
       compactions={data.compactions}

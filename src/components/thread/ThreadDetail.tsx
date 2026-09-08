@@ -5,6 +5,8 @@ import type {
   ContextPoint,
   ForkInfo,
   MemoryEntry,
+  PeerEventView,
+  SessionContinuity,
   SubagentRef,
   ThreadMessage,
   TokenTotals,
@@ -16,9 +18,11 @@ import { Minimap } from "../Minimap";
 import { ContextChart } from "../ContextChart";
 import { CostBreakdownChart } from "../CostBreakdownChart";
 import { SubagentsPanel } from "./SubagentsPanel";
+import { ContinuityBanner } from "./ContinuityBanner";
 import { Pager } from "../ui/Pager";
 import { Panel } from "../ui/Panel";
 import { Chip } from "../ui/Chip";
+import { PeerEventsContext } from "../message/peerContext";
 
 export interface ThreadDetailProps {
   sessionId: string; // for subagent deep links
@@ -69,7 +73,17 @@ export interface ThreadDetailProps {
   // rendered is the count, the (possibly larger) true total.
   filesTouchedCount?: number;
   filesTouched?: string[];
+  // Other transcripts of the same conversation (cross-file rewind/resume).
+  // Absent/null → no banner, which is the case for every subagent thread.
+  continuity?: SessionContinuity | null;
+  // Resolved cross-session views, keyed by eventId. Provided as a context, not
+  // threaded through Message/Block: both would lose what makes them cheap.
+  peerEventViews?: Record<string, PeerEventView>;
 }
+
+/** Stable identity so the provider's value doesn't change on every render of a
+ *  thread that has no peer events (the overwhelming majority). */
+const EMPTY_PEER_VIEWS: Record<string, PeerEventView> = {};
 
 /** Agnostic thread view: renders a conversation node (a session root or a
  *  subagent) — thread + cost + context + recursive subagents — plus the
@@ -97,6 +111,7 @@ export function ThreadDetail(p: ThreadDetailProps) {
   }, [p.messages]);
 
   return (
+    <PeerEventsContext.Provider value={p.peerEventViews ?? EMPTY_PEER_VIEWS}>
     <div className="detail">
       <div className="detail-header">
         <Link to={p.backTo.url} className="muted">{p.backTo.label}</Link>
@@ -116,6 +131,7 @@ export function ThreadDetail(p: ThreadDetailProps) {
       )}
 
       <div ref={threadElRef} className="detail-thread">
+        {p.continuity && <ContinuityBanner continuity={p.continuity} />}
         {p.branch && p.onBranch && (
           <div className="fork-banner">
             <span>⑂ {t("detail_fork_banner")} — {p.branch}</span>
@@ -306,5 +322,6 @@ export function ThreadDetail(p: ThreadDetailProps) {
         )}
       </aside>
     </div>
+    </PeerEventsContext.Provider>
   );
 }
