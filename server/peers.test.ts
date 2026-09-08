@@ -175,7 +175,23 @@ describe("computePeerGraph — body-hash fallback", () => {
     ];
     const g = run(index);
     expect(g.edges).toHaveLength(0);
-    expect(g.unresolved.find((u) => u.direction === "in")!.reason).toBe("ambiguous");
+    // Both ends of the competition are reserved — the sends are not merely
+    // counterpart-less, they are candidates that could not be told apart.
+    expect(g.unresolved.map((u) => u.reason)).toEqual(["ambiguous", "ambiguous", "ambiguous"]);
+  });
+
+  it("draws nothing when two receives compete for one send in the window", () => {
+    const index = [
+      session("A", [out({ bodyHash: H, timestamp: "2026-08-27T10:00:00.000Z" })]),
+      session("B", [inb({ bodyHash: H, timestamp: "2026-08-27T10:00:20.000Z" })]),
+      session("C", [inb({ bodyHash: H, timestamp: "2026-08-27T10:00:40.000Z" })]),
+    ];
+    const g = run(index);
+    // Enumeration order must not hand the send to whichever receive comes
+    // first: B and C are interchangeable here, so no edge may be drawn.
+    expect(g.edges).toHaveLength(0);
+    expect(g.unresolved.map((u) => u.reason)).toEqual(["ambiguous", "ambiguous", "ambiguous"]);
+    expect(g.unresolved.map((u) => u.at.sessionId).sort()).toEqual(["A", "B", "C"]);
   });
 
   it("never rescues a receive that HAS a msgId through the body hash", () => {

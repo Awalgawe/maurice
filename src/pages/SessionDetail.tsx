@@ -124,10 +124,12 @@ export default function SessionDetail() {
     }
   }
   const pages = Math.ceil(data.total / PAGE);
-  // Session-level peer summary. Counted over the resolved views (both
-  // directions, one key each), so it can never disagree with what the thread
-  // renders. Absent = no cross-session traffic at all, and no chip.
-  const peerViews = Object.values(data.peerEventViews ?? {});
+  // Session-level peer summary. Counted over the views the graph actually
+  // recognized as exchanges — an edge, or an ambiguity it refused to resolve.
+  // A send the graph excluded (an in-process subagent target) is not
+  // cross-session traffic: counting it here would make this chip disagree with
+  // both the Sessions list badge and the graph's own totals.
+  const peerViews = Object.values(data.peerEventViews ?? {}).filter((v) => v.edge || v.unresolved);
   const peerCounts = peerViews.length
     ? {
         peers: data.peers.length,

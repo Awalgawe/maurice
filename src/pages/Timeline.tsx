@@ -367,22 +367,27 @@ export default function Timeline() {
                       // a half connector gets one clickable, named marker — the
                       // other end lives in a lane sorted independently, so an
                       // arrow across rows would cross unrelated lines.
-                      return ends.marks.map((mk) => (
-                        <Link
-                          key={`${e.key}:${mk.eventId}`}
-                          to={mk.href ?? "#"}
-                          className={"tl-peer-mark" + (ends.kind === "full" ? " full" : " half")}
-                          style={{ left: `${mk.x}%`, top: mk.y }}
-                          title={`${mk.dir === "out" ? "→" : "←"} ${e.summary ?? ""}\n${
-                            ends.kind === "full" ? t("peer_connector_same_lane") : t("peer_connector_cross_lane")
-                          }\n${fmtDate(mk.ts)}`}
-                          onClick={(ev) => {
-                            if (!mk.href) ev.preventDefault();
-                          }}
-                        >
-                          {mk.dir === "out" ? "→" : "←"}
-                        </Link>
-                      ));
+                      return ends.marks.map((mk) => {
+                        const glyph = mk.dir === "out" ? "→" : "←";
+                        const cls = "tl-peer-mark" + (ends.kind === "full" ? " full" : " half");
+                        const style = { left: `${mk.x}%`, top: mk.y };
+                        const title = `${glyph} ${e.summary ?? ""}\n${
+                          ends.kind === "full" ? t("peer_connector_same_lane") : t("peer_connector_cross_lane")
+                        }\n${fmtDate(mk.ts)}`;
+                        const key = `${e.key}:${mk.eventId}`;
+                        // messageLink returns null when it cannot place the
+                        // counterpart: no link at all, rather than one that
+                        // lands on the wrong message (same rule as PeerMeta).
+                        return mk.href ? (
+                          <Link key={key} to={mk.href} className={cls} style={style} title={title}>
+                            {glyph}
+                          </Link>
+                        ) : (
+                          <span key={key} className={cls + " dead"} style={style} title={title}>
+                            {glyph}
+                          </span>
+                        );
+                      });
                     })}
                     </div>
                   </div>

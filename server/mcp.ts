@@ -4,20 +4,12 @@ import { getIndex } from "./cache.ts";
 import { readSessionDetail } from "./sessionDetail.ts";
 import { computePeerGraph } from "./peers.ts";
 import { listMemories } from "./parsers/memory.ts";
-import { buildAgentRows, listDefinedAgents } from "./parsers/agents.ts";
-import { readPeerRegistry } from "./claudeDir.ts";
+import { buildAgentRows } from "./parsers/agents.ts";
+import { peerRegistry } from "./peerRegistry.ts";
 import { listBilans, readBilan } from "./parsers/bilans.ts";
 import { searchDocs } from "./parsers/searchIndex.ts";
 import { computeFacets } from "./facets.ts";
-import type { PeerRegistrySnapshot, SearchHit, SessionMeta, TokenTotals } from "../src/types.ts";
-
-/** Same per-request read as the HTTP API: the live peer registry and the agent
- *  types defined on this machine are disk state outside any transcript cache. */
-function peerRegistry(index: SessionMeta[]): PeerRegistrySnapshot {
-  const snap = readPeerRegistry();
-  snap.knownAgentTypes = listDefinedAgents(index).map((a) => a.name);
-  return snap;
-}
+import type { SearchHit, SessionMeta, TokenTotals } from "../src/types.ts";
 
 /** Wrap any JSON-serialisable value as an MCP text content result. */
 function json(data: unknown) {

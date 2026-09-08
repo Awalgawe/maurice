@@ -165,8 +165,12 @@ export function classifyTarget(rawTarget: string | null, result: string | null):
   const t = (rawTarget ?? "").trim();
   if (t.startsWith("uds:")) return "peer";
   if (REF_TARGET.test(t)) return "peer";
-  if (result && PEER_PROOFS.some((p) => result.includes(p))) return "peer";
+  // The bare-hex target settles it before the result text is read at all: a
+  // SendMessage to an in-process subagent returns that subagent's REPLY, so a
+  // subagent merely discussing cross-session messaging would otherwise flip its
+  // own send to "peer".
   if (IN_PROCESS_TARGET.test(t)) return "in_process";
+  if (result && PEER_PROOFS.some((p) => result.includes(p))) return "peer";
   return "unknown";
 }
 

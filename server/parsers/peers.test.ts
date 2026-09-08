@@ -180,6 +180,13 @@ describe("classifyTarget", () => {
     expect(classifyTarget("a6f4784e943247236", null)).toBe("in_process");
   });
 
+  it("keeps a bare hex id in-process even when its reply talks about peers", () => {
+    // The result of an in-process send is the subagent's own reply: a subagent
+    // discussing cross-session messaging must not reclassify its own send.
+    const reply = "I checked: this mentions another Claude session on this machine.";
+    expect(classifyTarget("a6f4784e943247236", reply)).toBe("in_process");
+  });
+
   it("leaves a bare name unknown, and an agentType unknown", () => {
     expect(classifyTarget("custom-mcp-09", null)).toBe("unknown");
     expect(classifyTarget("general-purpose", null)).toBe("unknown");

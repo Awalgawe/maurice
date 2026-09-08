@@ -193,6 +193,12 @@ export function computePeerGraph(index: SessionMeta[], registry: PeerRegistrySna
     if (!h) continue;
     (byHash.get(h) ?? byHash.set(h, []).get(h)!).push(o);
   }
+  // Candidates are collected for every legacy inbound BEFORE any edge is added,
+  // then matched only on mutual uniqueness. Guarding the send side alone would
+  // leave two receives competing for one send to be settled by enumeration
+  // order — the first inbound consuming the send, the second reported as having
+  // no counterpart. That is a guessed edge, which this graph never makes.
+  const hashCandidates = new Map<Owned, Owned[]>();
   for (const o of owned) {
     if (o.consumed || o.ambiguous) continue;
     if (o.ev.direction !== "in") continue;
@@ -200,16 +206,30 @@ export function computePeerGraph(index: SessionMeta[], registry: PeerRegistrySna
     if (inbound.msgId !== null) continue;
     if (!inbound.bodyHash) continue;
     const inTs = inbound.timestamp ? Date.parse(inbound.timestamp) : NaN;
+    if (!Number.isFinite(inTs)) continue;
     const candidates = (byHash.get(inbound.bodyHash) ?? []).filter((c) => {
       if (c.consumed || c.ambiguous) return false;
       if (c.sessionId === o.sessionId) return false;
-      if (!Number.isFinite(inTs)) return false;
       const outTs = c.ev.timestamp ? Date.parse(c.ev.timestamp) : NaN;
       if (!Number.isFinite(outTs)) return false;
       return outTs <= inTs && inTs - outTs <= HASH_WINDOW_MS;
     });
-    if (candidates.length === 1) addEdge(candidates[0], o, "body_hash", null);
-    else if (candidates.length > 1) o.ambiguous = true;
+    if (candidates.length > 0) hashCandidates.set(o, candidates);
+  }
+  const claimants = new Map<Owned, Owned[]>(); // send → inbounds that reached it
+  for (const [inbound, candidates] of hashCandidates) {
+    for (const send of candidates) (claimants.get(send) ?? claimants.set(send, []).get(send)!).push(inbound);
+  }
+  for (const [inbound, candidates] of hashCandidates) {
+    const only = candidates.length === 1 ? candidates[0] : null;
+    if (only && claimants.get(only)!.length === 1) {
+      addEdge(only, inbound, "body_hash", null);
+      continue;
+    }
+    // Both ends of an unsettled competition are reserved: neither may fall
+    // through to pass 3 and be reported as simply having no counterpart.
+    inbound.ambiguous = true;
+    for (const send of candidates) send.ambiguous = true;
   }
 
   // --- Passes 3 & 4: everything left is classified, exactly once ------------

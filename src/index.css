@@ -439,6 +439,8 @@ tr.day-row td { background: var(--panel); color: var(--muted); font-size: 12px; 
 /* A half connector reaches a lane sorted independently: dashed, so it never
    reads as a line that simply wasn't drawn. */
 .tl-peer-mark.half { border: 1px dashed var(--peer); }
+/* An unplaceable counterpart: same mark, but nothing to click. */
+.tl-peer-mark.dead { color: var(--muted); cursor: default; }
 
 /* Layout for detail — 3-row grid keeps pager+messages as one logical unit */
 .detail {
