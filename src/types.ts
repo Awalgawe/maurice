@@ -149,6 +149,64 @@ export interface SessionMeta {
   // key the cross-file continuation join is built on (see SessionContinuity).
   // Optional: absent pre-v24 cache. Empty for a transcript with no API call.
   requestIds?: string[];
+  // Usage of each request in `requestIds`, index-aligned with it (see
+  // RequestUsage). Per-transcript, so cache-safe; it is what the cross-file
+  // dedup subtracts from a copy. Optional: absent pre-v26 cache. Index-only,
+  // stripped from the list response.
+  requestUsage?: RequestUsage[];
+  requestUsageDict?: RequestUsageDict;
+  // Usage this transcript shares with another one that owns it (a fork copy),
+  // derived per request from the whole index — never cached. Present only on
+  // list rows, only when non-zero. Raw totals above stay the file's own figures;
+  // aggregates subtract these, through src/lib/dedupNet.ts.
+  dupCostUSD?: number;
+  dupTokens?: TokenTotals;
+  dupSkillCost?: Record<string, number>;
+  dupSkillTokens?: Record<string, number>;
+  dupCostByDay?: Record<string, number>;
+  dupByDay?: Record<string, DupDayAgg>;
+}
+
+/** One main-thread request's usage, as a compact tuple (the index holds tens of
+ *  thousands): indices into the session's RequestUsageDict (-1 = none), token
+ *  counts, then cost per component in integer micro-USD. A slot whose usage was
+ *  already counted elsewhere in the file (a sidechain line) stays all-zero. */
+export type RequestUsage = [
+  dayIdx: number,
+  modelIdx: number,
+  skillIdx: number,
+  input: number,
+  output: number,
+  cacheRead: number,
+  cacheCreate: number,
+  uInput: number,
+  uOutput: number,
+  uCacheRead: number,
+  uCacheCreate: number,
+];
+
+export interface RequestUsageDict {
+  days: string[];
+  models: string[];
+  skills: string[];
+}
+
+/** The cost/token slice of DayAgg that a copied request contributes. */
+export interface DupDayAgg {
+  tokens: TokenTotals;
+  costByComponent: TokenTotals; // USD
+  modelCost: Record<string, number>;
+  modelTokens: Record<string, number>;
+  skillCost: Record<string, number>;
+  skillTokens: Record<string, number>;
+}
+
+/** What a session's detail says about its copied usage: how much of its raw
+ *  figures another transcript also holds (and owns). */
+export interface SessionDuplicate {
+  costUSD: number;
+  tokens: TokenTotals;
+  owners: { sessionId: string; projectId: string; title: string | null; costUSD: number }[];
 }
 
 /** One local day's slice of a session's decomposable per-turn quantities. */
@@ -387,6 +445,8 @@ export interface SessionDetail extends LocalSessionDetail {
   // Other transcripts of the same conversation, or null when this file is the
   // only one. Non-optional for the same reason as the peer fields below.
   continuity: SessionContinuity | null;
+  // Usage this file shares with a transcript that owns it, or null.
+  duplicate: SessionDuplicate | null;
   peers: PeerRef[];
   peerEventViews: Record<string, PeerEventView>; // keyed by eventId, both directions
   peerUnresolved: UnresolvedPeerEvent[]; // this session's events only

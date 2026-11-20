@@ -7,6 +7,7 @@ import type {
   MemoryEntry,
   PeerEventView,
   SessionContinuity,
+  SessionDuplicate,
   SubagentRef,
   ThreadMessage,
   TokenTotals,
@@ -56,6 +57,8 @@ export interface ThreadDetailProps {
   models: string[];
   start: string | null;
   end: string | null;
+  // Part of the cost above that another transcript also holds (fork copy).
+  duplicate?: SessionDuplicate | null;
 
   // Root/session-only affordances — every one optional; absent → panel hidden.
   pager?: { page: number; pages: number; total: number; onPage: (p: number) => void };
@@ -175,7 +178,21 @@ export function ThreadDetail(p: ThreadDetailProps) {
             estCostUSD={p.estCostUSD}
             withSubagentsCostUSD={hasWithSub ? p.withSubagentsCostUSD : undefined}
           />
-          <div className="kv" style={{ marginTop: "1em" }}>
+          {p.duplicate && (
+            <div className="kv" style={{ marginTop: "1em" }} title={t("detail_dup_title")}>
+              <span className="k">{t("detail_dup_label")}</span>
+              <span className="v">
+                <span className="cost">{fmtCost(p.duplicate.costUSD)}</span> {t("detail_dup_also_in")}{" "}
+                {p.duplicate.owners.map((o, i) => (
+                  <Fragment key={o.sessionId}>
+                    {i > 0 && ", "}
+                    <Link to={`/sessions/${o.sessionId}`}>{o.title || o.sessionId.slice(0, 8)}</Link>
+                  </Fragment>
+                ))}
+              </span>
+            </div>
+          )}
+          <div className="kv" style={{ marginTop: p.duplicate ? undefined : "1em" }}>
             <span className="k">{t("detail_models")}</span>
             <span className="v">{p.models.join(", ") || "—"}</span>
           </div>

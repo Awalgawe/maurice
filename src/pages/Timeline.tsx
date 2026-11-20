@@ -7,6 +7,7 @@ import { useT } from "../hooks/useT";
 import { useSessions } from "../hooks/useSessions";
 import { usePeers } from "../hooks/usePeers";
 import { messageLink } from "../lib/messageLink";
+import { netSessionTotals } from "../lib/dedupNet";
 import { ErrorState } from "../components/ui/ErrorState";
 
 type Pivot = "ticket" | "branch" | "project";
@@ -121,7 +122,7 @@ export default function Timeline() {
       let l = map.get(key);
       if (!l) { l = { key, label, sublabel, sessions: [], cost: 0, lastTs: 0 }; map.set(key, l); }
       l.sessions.push(s);
-      l.cost += s.estCostUSD;
+      l.cost += netSessionTotals(s).cost;
       const end = s.end ? new Date(s.end).getTime() : new Date(s.start as string).getTime();
       if (end > l.lastTs) l.lastTs = end;
     };

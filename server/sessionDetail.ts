@@ -1,5 +1,6 @@
 import { readDetail, readPeerRuntime } from "./parsers/sessions.ts";
 import { computeContinuity } from "./continuity.ts";
+import { dedupFor } from "./dedup.ts";
 import { computePeerGraph } from "./peers.ts";
 import { DETAIL_PAGE, messageLink } from "../src/lib/messageLink.ts";
 import type {
@@ -8,6 +9,7 @@ import type {
   PeerGraph,
   PeerRegistrySnapshot,
   SessionDetail,
+  SessionDuplicate,
   SessionMeta,
   UnresolvedPeerEvent,
 } from "../src/types.ts";
@@ -30,18 +32,30 @@ export async function readSessionDetail(
   limit: number,
   branch?: string | null,
 ): Promise<SessionDetail | null> {
-  const local = await readDetail(meta, offset, limit, branch);
-  if (!local) return null;
+  const read = await readDetail(meta, offset, limit, branch);
+  if (!read) return null;
+  // The cross-session join inputs are index-only (the joins read them from the
+  // index, through `meta`): up to ~200 KB pretty-printed on a long session in an
+  // MCP result, and no client renders them. Same fields listRow drops.
+  const {
+    requestIds: _ids,
+    requestUsage: _usage,
+    requestUsageDict: _dict,
+    peerEvents: _events,
+    ...servedMeta
+  } = read.meta;
+  const local = { ...read, meta: servedMeta };
 
   // Cross-file continuation: same lineage-of-transcripts question as the peer
   // join — index-wide, so recomputed here rather than cached.
   const continuity = computeContinuity(index, meta);
+  const duplicate = duplicateOf(index, meta);
 
   const hasPeerEvents = (meta.peerEvents?.length ?? 0) > 0;
   if (!hasPeerEvents) {
     // Overwhelmingly the common case: no graph to compute, but the served shape
     // is still the enriched one — the fields are empty, never absent.
-    return { ...local, continuity, peers: [], peerEventViews: {}, peerUnresolved: [] };
+    return { ...local, continuity, duplicate, peers: [], peerEventViews: {}, peerUnresolved: [] };
   }
 
   const graph = computePeerGraph(index, registry);
@@ -84,7 +98,22 @@ export async function readSessionDetail(
     };
   }
 
-  return { ...local, continuity, peers: own?.peers ?? [], peerEventViews, peerUnresolved };
+  return { ...local, continuity, duplicate, peers: own?.peers ?? [], peerEventViews, peerUnresolved };
+}
+
+/** How much of this file's raw usage another transcript also holds and owns
+ *  (see server/dedup.ts), with those owners, costliest first. */
+function duplicateOf(index: SessionMeta[], meta: SessionMeta): SessionDuplicate | null {
+  const d = dedupFor(index).get(meta.id);
+  if (!d) return null;
+  const byId = new Map(index.map((s) => [s.id, s]));
+  const owners = Object.entries(d.owners)
+    .map(([sessionId, costUSD]) => {
+      const o = byId.get(sessionId);
+      return { sessionId, projectId: o?.projectId ?? meta.projectId, title: o?.aiTitle || null, costUSD };
+    })
+    .sort((a, b) => b.costUSD - a.costUSD);
+  return { costUSD: d.costUSD, tokens: d.tokens, owners };
 }
 
 export type { PeerGraph };

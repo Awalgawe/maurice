@@ -156,6 +156,7 @@ export default function SessionDetail() {
       }
       messages={data.messages}
       continuity={data.continuity}
+      duplicate={data.duplicate}
       peerEventViews={data.peerEventViews}
       context={data.context}
       modelChanges={modelChanges}

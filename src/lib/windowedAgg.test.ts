@@ -62,6 +62,24 @@ describe("windowSession", () => {
     expect(w.heat[String(3 * 24 + 9)]).toBe(4);
   });
 
+  it("nets copied usage per day within the window, leaving counts raw", () => {
+    const dupByDay = {
+      // Before the cutoff: must not be subtracted from the window.
+      "2026-01-01": { ...mkDay({}), tokens: { input: 10, output: 0, cacheRead: 0, cacheCreate: 0 }, costByComponent: { input: 1, output: 0, cacheRead: 0, cacheCreate: 0 } },
+      // A day held only by copied usage: nets to exactly 0, residue included.
+      "2026-01-05": {
+        ...mkDay({}),
+        tokens: { input: 0, output: 20, cacheRead: 0, cacheCreate: 0 },
+        costByComponent: { input: 0, output: 1.9999999, cacheRead: 0, cacheCreate: 0 },
+      },
+    };
+    const w = windowSession(byDay, "2026-01-03", dupByDay);
+    expect(w.cost).toBe(0);
+    expect(w.tokens.output).toBe(0);
+    expect(w.errorCount).toBe(3);
+    expect(windowSession(byDay, null, dupByDay).cost).toBe(0);
+  });
+
   it("returns zeros for an undefined byDay", () => {
     const w = windowSession(undefined, null);
     expect(w.cost).toBe(0);

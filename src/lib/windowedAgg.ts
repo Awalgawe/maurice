@@ -1,4 +1,5 @@
-import type { DayAgg, TokenTotals } from "../types";
+import type { DayAgg, DupDayAgg, TokenTotals } from "../types";
+import { subtractDup } from "./dedupNet";
 
 /** A session's decomposable metrics summed over the days within a window. */
 export interface WindowedTotals {
@@ -48,10 +49,13 @@ function dowOf(day: string): number {
  * ("YYYY-MM-DD"), or over all days when `cutoffDay` is null. Lets the Dashboard
  * window every decomposable KPI on the same period as the daily charts, instead
  * of counting a whole session because its last activity landed in the window.
+ * `dupByDay` (the session's copied usage, see SessionMeta.dupByDay) is netted
+ * out of each day's cost/token slice; counts are left raw.
  */
 export function windowSession(
   byDay: Record<string, DayAgg> | undefined,
   cutoffDay: string | null,
+  dupByDay?: Record<string, DupDayAgg>,
 ): WindowedTotals {
   const out: WindowedTotals = {
     cost: 0,
@@ -76,8 +80,10 @@ export function windowSession(
     heat: {},
   };
   if (!byDay) return out;
-  for (const [day, agg] of Object.entries(byDay)) {
+  for (const [day, rawAgg] of Object.entries(byDay)) {
     if (cutoffDay && day < cutoffDay) continue;
+    const dup = dupByDay?.[day];
+    const agg = dup ? { ...rawAgg, ...subtractDup(rawAgg, dup) } : rawAgg;
     addTok(out.tokens, agg.tokens);
     addTok(out.costByComponent, agg.costByComponent);
     out.cost += agg.costByComponent.input + agg.costByComponent.output + agg.costByComponent.cacheRead + agg.costByComponent.cacheCreate;
