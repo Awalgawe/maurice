@@ -17,6 +17,7 @@ import { listBilans, readBilan } from "../parsers/bilans.ts";
 import { sessionFilePath, subagentsDir, PROJECTS_DIR } from "../claudeDir.ts";
 import { searchDocs } from "../parsers/searchIndex.ts";
 import { computeFacets } from "../facets.ts";
+import { dedupFor, dupRowFields, type SessionDup } from "../dedup.ts";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { createMcpServer } from "../mcp.ts";
@@ -26,18 +27,20 @@ export const api = Router();
 
 const PERF = !!process.env.PERF;
 
-/** The list response drops the two index-only fields. `requestIds` (the
- *  continuation join) and `peerEvents` (the peer join) exist for the
- *  cross-session joins the server computes itself; no client reads either, and
- *  together they are ~30% of the payload. The in-memory index keeps them. */
-function listRow(s: SessionMeta): SessionMeta {
-  const { requestIds: _ids, peerEvents: _events, ...row } = s;
-  return row;
+/** The list response drops the index-only fields. `requestIds` (the
+ *  continuation join), `requestUsage` (the fork dedup) and `peerEvents` (the
+ *  peer join) exist for the cross-session joins the server computes itself; no
+ *  client reads them. The in-memory index keeps them. What the dedup derives
+ *  from them is added as the `dup*` fields instead. */
+function listRow(s: SessionMeta, dedup: Map<string, SessionDup>): SessionMeta {
+  const { requestIds: _ids, requestUsage: _usage, requestUsageDict: _dict, peerEvents: _events, ...row } = s;
+  return { ...row, ...dupRowFields(dedup.get(s.id)) };
 }
 
 api.get("/sessions", async (_req, res) => {
   const index = await getIndex();
-  res.json(index.map(listRow));
+  const dedup = dedupFor(index);
+  res.json(index.map((s) => listRow(s, dedup)));
 });
 
 api.get("/active", async (_req, res) => {

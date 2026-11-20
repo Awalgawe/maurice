@@ -38,6 +38,8 @@ import type {
   PeerEvent,
   PeerInbound,
   LocalSessionDetail,
+  RequestUsage,
+  RequestUsageDict,
   SessionError,
   SessionMeta,
   SubagentDetail,
@@ -131,6 +133,24 @@ export async function buildMetaAndDocs(file: SessionFile): Promise<{ meta: Sessi
   const seenUsage = new Set<string>(); // dedup token usage by requestId/msgId
   const requestIds: string[] = []; // main-thread API requests, in order (see SessionMeta)
   const seenRequestIds = new Set<string>();
+  // Usage per requestIds entry, same index (see RequestUsage). The slot is pushed
+  // with the requestId and filled by the usage branch below: a requestId whose
+  // usage key was already consumed by a sidechain line never reaches that
+  // branch, and must still keep the two arrays aligned.
+  const requestUsage: RequestUsage[] = [];
+  const requestSlot = new Map<string, number>();
+  const requestUsageDict: RequestUsageDict = { days: [], models: [], skills: [] };
+  const dictIdx = new Map<string, number>(); // "<list>:<value>" → index
+  const intern = (list: keyof RequestUsageDict, value: string): number => {
+    const k = `${list}:${value}`;
+    let i = dictIdx.get(k);
+    if (i === undefined) {
+      i = requestUsageDict[list].push(value) - 1;
+      dictIdx.set(k, i);
+    }
+    return i;
+  };
+  const micro = (usd: number) => Math.round(usd * 1e6);
 
   let messageCount = 0;
   let start: string | null = null;
@@ -352,7 +372,9 @@ export async function buildMetaAndDocs(file: SessionFile): Promise<{ meta: Sessi
       if (typeof obj.requestId === "string" && obj.requestId && obj.isSidechain !== true) {
         if (!seenRequestIds.has(obj.requestId)) {
           seenRequestIds.add(obj.requestId);
+          requestSlot.set(obj.requestId, requestUsage.length);
           requestIds.push(obj.requestId);
+          requestUsage.push([-1, -1, -1, 0, 0, 0, 0, 0, 0, 0, 0]);
         }
       }
       if (obj.isApiErrorMessage === true) {
@@ -387,6 +409,22 @@ export async function buildMetaAndDocs(file: SessionFile): Promise<{ meta: Sessi
         const mk = isRealModel(msg.model) ? msg.model : "(inconnu)";
         modelTokens[mk] = (modelTokens[mk] || 0) + turnTokens;
         modelCost[mk] = (modelCost[mk] || 0) + turnCost;
+        const slot = obj.isSidechain !== true && key === obj.requestId ? requestSlot.get(key) : undefined;
+        if (slot !== undefined) {
+          requestUsage[slot] = [
+            day ? intern("days", day) : -1,
+            intern("models", mk),
+            intern("skills", sk),
+            t.input,
+            t.output,
+            t.cacheRead,
+            t.cacheCreate,
+            micro(turnCostByComponent.input),
+            micro(turnCostByComponent.output),
+            micro(turnCostByComponent.cacheRead),
+            micro(turnCostByComponent.cacheCreate),
+          ];
+        }
         // Per-day mirror of this turn's tokens/cost/model/skill attribution.
         if (day) {
           costByDay[day] = (costByDay[day] || 0) + turnCost;
@@ -609,6 +647,8 @@ export async function buildMetaAndDocs(file: SessionFile): Promise<{ meta: Sessi
       byDay,
       peerEvents: peer.events,
       requestIds,
+      requestUsage,
+      requestUsageDict,
     },
     searchDocs,
   };

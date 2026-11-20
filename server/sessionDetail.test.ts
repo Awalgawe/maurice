@@ -205,6 +205,20 @@ describe("readSessionDetail", () => {
     expect(d.peerUnresolved).toEqual([]);
   });
 
+  it("keeps the index-only join inputs out of the served meta", async () => {
+    expect(receiverMeta.requestUsage).toHaveLength(1);
+    expect(receiverMeta.requestIds).toHaveLength(1);
+    expect(receiverMeta.peerEvents!.length).toBeGreaterThan(0);
+    const d = (await readSessionDetail(index, REGISTRY, receiverMeta, 0, 200))!;
+    expect(d.meta.requestUsage).toBeUndefined();
+    expect(d.meta.requestUsageDict).toBeUndefined();
+    expect(d.meta.requestIds).toBeUndefined();
+    expect(d.meta.peerEvents).toBeUndefined();
+    expect(d.duplicate).toBeNull();
+    // The peer join still ran on the full meta.
+    expect(d.peerEventViews[`${RECEIVER}:in:r1`]).toBeDefined();
+  });
+
   it("returns null for an unknown branch, like readDetail does", async () => {
     expect(await readSessionDetail(index, REGISTRY, senderMeta, 0, 200, "f99")).toBeNull();
   });

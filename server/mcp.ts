@@ -9,7 +9,9 @@ import { peerRegistry } from "./peerRegistry.ts";
 import { listBilans, readBilan } from "./parsers/bilans.ts";
 import { searchDocs } from "./parsers/searchIndex.ts";
 import { computeFacets } from "./facets.ts";
-import type { SearchHit, SessionMeta, TokenTotals } from "../src/types.ts";
+import { dedupFor, type SessionDup } from "./dedup.ts";
+import { computeCostSummary } from "./costSummary.ts";
+import type { SearchHit, SessionMeta } from "../src/types.ts";
 
 /** Wrap any JSON-serialisable value as an MCP text content result. */
 function json(data: unknown) {
@@ -17,7 +19,8 @@ function json(data: unknown) {
 }
 
 /** A compact session row for list/search results — the full thread lives behind get_session. */
-function summarize(s: SessionMeta) {
+function summarize(s: SessionMeta, dedup: Map<string, SessionDup>) {
+  const d = dedup.get(s.id);
   return {
     id: s.id,
     projectId: s.projectId,
@@ -32,19 +35,16 @@ function summarize(s: SessionMeta) {
     messageCount: s.messageCount,
     tokens: s.tokens,
     estCostUSD: s.estCostUSD,
+    // Part of the raw figures above that a fork copy shares with the transcript
+    // owning it; aggregates subtract it (cost_summary does).
+    dupCostUSD: d?.costUSD ?? 0,
+    dupTokens: d?.tokens ?? { input: 0, output: 0, cacheRead: 0, cacheCreate: 0 },
     peakContextPct: s.peakContextPct,
     hasErrors: s.hasErrors,
     subagentCount: s.subagentCount,
     firstUserPrompt: s.firstUserPrompt,
     aiTitle: s.aiTitle ?? null,
   };
-}
-
-function addTokens(into: TokenTotals, from: TokenTotals): void {
-  into.input += from.input;
-  into.output += from.output;
-  into.cacheRead += from.cacheRead;
-  into.cacheCreate += from.cacheCreate;
 }
 
 /**
@@ -120,7 +120,9 @@ export function createMcpServer(): McpServer {
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     async ({ project, ticket, skill, branch, model, query, hasErrors, limit, offset }) => {
-      let rows = [...(await getIndex())];
+      const index = await getIndex();
+      const dedup = dedupFor(index); // whole index: a copy's owner may be filtered out
+      let rows = [...index];
       const ci = (s: string) => s.toLowerCase();
       if (project) {
         const p = ci(project);
@@ -139,7 +141,7 @@ export function createMcpServer(): McpServer {
       const total = rows.length;
       const start = offset ?? 0;
       const page = rows.slice(start, start + (limit ?? 50));
-      return json({ total, offset: start, count: page.length, sessions: page.map(summarize) });
+      return json({ total, offset: start, count: page.length, sessions: page.map((s) => summarize(s, dedup)) });
     },
   );
 
@@ -229,6 +231,7 @@ export function createMcpServer(): McpServer {
       title: "Cost summary",
       description:
         "Aggregate estimated cost and token usage across all sessions, broken down by model, skill, and project. " +
+        "Usage a fork copy shares with its original is counted once (dupCostUSD is the excluded part). " +
         "Cost is an estimate from a pricing table, not exact billing.",
       inputSchema: {
         project: z.string().optional().describe("Limit to sessions matching this project id/label/path substring"),
@@ -236,53 +239,8 @@ export function createMcpServer(): McpServer {
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     async ({ project }) => {
-      let rows = await getIndex();
-      if (project) {
-        const p = project.toLowerCase();
-        rows = rows.filter(
-          (s) =>
-            s.projectId.toLowerCase().includes(p) ||
-            s.projectLabel.toLowerCase().includes(p) ||
-            s.projectPath.toLowerCase().includes(p),
-        );
-      }
-
-      const totalTokens: TokenTotals = { input: 0, output: 0, cacheRead: 0, cacheCreate: 0 };
-      let totalCost = 0;
-      let earliest: string | null = null;
-      let latest: string | null = null;
-      const byModel = new Map<string, number>();
-      const bySkill = new Map<string, number>();
-      const byProject = new Map<string, { label: string; cost: number; sessions: number }>();
-
-      for (const s of rows) {
-        addTokens(totalTokens, s.tokens);
-        totalCost += s.estCostUSD;
-        if (s.start && (!earliest || s.start < earliest)) earliest = s.start;
-        if (s.end && (!latest || s.end > latest)) latest = s.end;
-        for (const [m, c] of Object.entries(s.modelCost)) byModel.set(m, (byModel.get(m) ?? 0) + c);
-        for (const [sk, c] of Object.entries(s.skillCost)) bySkill.set(sk, (bySkill.get(sk) ?? 0) + c);
-        const pj = byProject.get(s.projectId) ?? { label: s.projectLabel, cost: 0, sessions: 0 };
-        pj.cost += s.estCostUSD;
-        pj.sessions += 1;
-        byProject.set(s.projectId, pj);
-      }
-
-      const ranked = (m: Map<string, number>) =>
-        [...m.entries()].map(([key, costUSD]) => ({ key, costUSD })).sort((a, b) => b.costUSD - a.costUSD);
-
-      return json({
-        sessionCount: rows.length,
-        periodStart: earliest,
-        periodEnd: latest,
-        totalTokens,
-        estCostUSD: totalCost,
-        byModel: ranked(byModel),
-        bySkill: ranked(bySkill),
-        byProject: [...byProject.entries()]
-          .map(([projectId, v]) => ({ projectId, projectLabel: v.label, estCostUSD: v.cost, sessions: v.sessions }))
-          .sort((a, b) => b.estCostUSD - a.estCostUSD),
-      });
+      const index = await getIndex();
+      return json(computeCostSummary(index, dedupFor(index), project));
     },
   );
 

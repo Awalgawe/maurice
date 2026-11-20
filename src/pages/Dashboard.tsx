@@ -20,6 +20,7 @@ import { useFmt } from "../hooks/useFmt";
 import { useT } from "../hooks/useT";
 import { useSessions } from "../hooks/useSessions";
 import { windowSession } from "../lib/windowedAgg";
+import { netDayCost } from "../lib/dedupNet";
 import { useLang } from "../state/LangContext";
 import { Chip } from "../components/ui/Chip";
 import { Panel } from "../components/ui/Panel";
@@ -152,7 +153,7 @@ export default function Dashboard() {
       // a session whose last activity merely lands in the window doesn't drag in
       // its pre-window cost/tokens/activity. When byDay is absent (should not
       // happen post-v22 reparse), windowSession returns zeros for that session.
-      const w = windowSession(s.byDay, cutoffDay);
+      const w = windowSession(s.byDay, cutoffDay, s.dupByDay);
       totalCost += w.cost;
       totalTok += totalTokens(w.tokens);
       totalErrors += w.errorCount;
@@ -186,10 +187,10 @@ export default function Dashboard() {
       for (const m of s.permissionModes ?? []) permissionModesSeen.add(m);
 
       // Cost: spread across the days the session actually spanned (per-message).
-      for (const [day, c] of Object.entries(s.costByDay ?? {})) {
+      for (const day of Object.keys(s.costByDay ?? {})) {
         if (cutoffDay && day < cutoffDay) continue;
         const d = dayMap[day] || { cost: 0, sessions: 0 };
-        d.cost += c;
+        d.cost += netDayCost(s, day);
         dayMap[day] = d;
       }
       // Sessions: counted on every day the session was active (≥1 message).

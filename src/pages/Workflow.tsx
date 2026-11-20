@@ -8,6 +8,7 @@ import { useFmt } from "../hooks/useFmt";
 import { useT } from "../hooks/useT";
 import { SortHeader } from "../components/ui/SortHeader";
 import { ErrorState } from "../components/ui/ErrorState";
+import { netSessionTotals, netSkillShares } from "../lib/dedupNet";
 
 type Pivot = "skill" | "ticket" | "branch";
 type SortKey = "label" | "project" | "sessions" | "tokens" | "cost" | "duration" | "errors";
@@ -51,22 +52,19 @@ export default function Workflow() {
     };
     for (const s of sessions) {
       if (pivot === "skill") {
-        // Use the per-skill breakdown computed server-side.
-        const keys = Object.keys(s.skillTokens || {});
-        if (keys.length === 0) add("(aucun)", t("workflow_no_skill"), s, totalTokens(s.tokens), s.estCostUSD);
-        else
-          for (const k of keys) {
-            const label = k === "(aucun)" ? t("workflow_no_skill") : skillLabel(k);
-            add(k, label, s, s.skillTokens[k] || 0, s.skillCost[k] || 0);
-          }
-      } else if (pivot === "ticket") {
-        add(s.ticket || "(aucun)", s.ticket || t("workflow_no_ticket"), s, totalTokens(s.tokens), s.estCostUSD);
+        // Per-skill breakdown computed server-side, net of fork copies. A pure
+        // copy has no share left and is skipped (see netSkillShares).
+        for (const sh of netSkillShares(s)) {
+          const label = sh.key === "(aucun)" ? t("workflow_no_skill") : skillLabel(sh.key);
+          add(sh.key, label, s, sh.tokens, sh.cost);
+        }
       } else {
-        if (s.branches.length === 0)
-          add(`${s.projectId}::(aucune)`, t("workflow_no_branch"), s, totalTokens(s.tokens), s.estCostUSD, s.projectLabel);
-        else
-          for (const b of s.branches)
-            add(`${s.projectId}::${b}`, b, s, totalTokens(s.tokens), s.estCostUSD, s.projectLabel);
+        const net = netSessionTotals(s);
+        const tok = totalTokens(net.tokens);
+        if (pivot === "ticket") add(s.ticket || "(aucun)", s.ticket || t("workflow_no_ticket"), s, tok, net.cost);
+        else if (s.branches.length === 0)
+          add(`${s.projectId}::(aucune)`, t("workflow_no_branch"), s, tok, net.cost, s.projectLabel);
+        else for (const b of s.branches) add(`${s.projectId}::${b}`, b, s, tok, net.cost, s.projectLabel);
       }
     }
     return [...map.values()];
@@ -86,6 +84,14 @@ export default function Workflow() {
     };
     return sortBy(groups, val);
   }, [groups, sortKey, sortDir]);
+
+  // One session's net share in a group: its skill share in the skill pivot,
+  // its whole net totals otherwise — the same figures the group sums.
+  const rowShare = (s: SessionMeta, key: string): { tokens: number; cost: number } => {
+    if (pivot === "skill") return netSkillShares(s).find((sh) => sh.key === key) ?? { tokens: 0, cost: 0 };
+    const net = netSessionTotals(s);
+    return { tokens: totalTokens(net.tokens), cost: net.cost };
+  };
 
   const [open, setOpen] = useState<string | null>(null);
   const pivotLabels: Record<Pivot, string> = {
@@ -140,10 +146,8 @@ export default function Workflow() {
                 g.sessions
                   .slice()
                   .sort((a, b) => {
-                    const tv = (s: SessionMeta) =>
-                      pivot === "skill" ? s.skillTokens[g.key] || 0 : totalTokens(s.tokens);
-                    const cv = (s: SessionMeta) =>
-                      pivot === "skill" ? s.skillCost[g.key] || 0 : s.estCostUSD;
+                    const tv = (s: SessionMeta) => rowShare(s, g.key).tokens;
+                    const cv = (s: SessionMeta) => rowShare(s, g.key).cost;
                     switch (sortKey) {
                       case "tokens":   return sortDir * (tv(a) - tv(b));
                       case "cost":     return sortDir * (cv(a) - cv(b));
@@ -156,10 +160,7 @@ export default function Workflow() {
                   })
                   .map((s) => {
                     // In the skill pivot, show this session's share for the skill.
-                    const rowTokens =
-                      pivot === "skill" ? s.skillTokens[g.key] || 0 : totalTokens(s.tokens);
-                    const rowCost =
-                      pivot === "skill" ? s.skillCost[g.key] || 0 : s.estCostUSD;
+                    const { tokens: rowTokens, cost: rowCost } = rowShare(s, g.key);
                     return (
                       <tr key={g.key + s.id} style={{ background: "var(--panel)" }}>
                         <td style={{ paddingLeft: 28 }}>
